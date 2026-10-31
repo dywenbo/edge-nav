@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>edge-nav · 纸感编辑风</title>
+<style>
+  :root{
+    --paper:#f4efe4;
+    --paper-2:#efe8d9;
+    --ink:#1b1710;
+    --ink-2:#5c5446;
+    --ink-3:#9a9080;
+    --rule:rgba(27,23,16,.16);
+    --rule-soft:rgba(27,23,16,.09);
+    --accent:#c2452c;
+    --accent-soft:rgba(194,69,44,.08);
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Songti SC","Noto Serif SC",Georgia,serif;
+    --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    --ease:cubic-bezier(.2,.7,.3,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+    padding:0 clamp(16px,4vw,64px) 48px;
+    background-image:
+      radial-gradient(1100px 520px at 50% -12%, rgba(255,255,255,.85), transparent 62%),
+      radial-gradient(900px 700px at 100% 100%, rgba(210,190,160,.28), transparent 60%);
+    background-attachment:fixed;
+  }
+  ::selection{background:rgba(194,69,44,.18)}
+
+  /* ---------- 顶部刊头 ---------- */
+  .masthead{
+    max-width:1320px;margin:0 auto;
+    padding-top:20px;
+  }
+  .utility{
+    display:flex;align-items:center;justify-content:space-between;gap:16px;
+    font-size:10px;letter-spacing:.20em;text-transform:uppercase;color:var(--ink-3);
+    padding-bottom:12px;border-bottom:1px solid var(--rule);
+  }
+  .utility__mid{letter-spacing:.12em}
+  .utility__right{display:flex;align-items:center;gap:14px}
+  .utility b{color:var(--ink-2);font-weight:600;letter-spacing:.1em}
+
+  .head{
+    display:grid;grid-template-columns:1fr auto;gap:24px;align-items:end;
+    padding:26px 0 20px;border-bottom:2px solid var(--ink);
+  }
+  .head h1{
+    font-family:var(--serif);font-weight:400;
+    font-size:clamp(38px,5.6vw,72px);line-height:.98;letter-spacing:-.02em;
+  }
+  .head h1 em{font-style:italic;color:var(--accent)}
+  .head__sub{
+    margin-top:14px;font-size:12px;color:var(--ink-2);letter-spacing:.02em;
+    display:flex;align-items:center;gap:10px;
+  }
+  .head__sub i{display:block;width:26px;height:1px;background:var(--accent)}
+  .head__weather{text-align:right;padding-bottom:6px}
+  .head__weather .temp{
+    font-family:var(--serif);font-size:44px;line-height:1;letter-spacing:-.02em;
+  }
+  .head__weather .temp sup{font-size:16px;vertical-align:top;color:var(--ink-3)}
+  .head__weather .meta{
+    font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin-top:8px;
+  }
+
+  /* ---------- 搜索 ---------- */
+  .searchwrap{
+    max-width:1320px;margin:0 auto;padding:18px 0;
+    display:flex;align-items:center;gap:18px;
+    border-bottom:1px solid var(--rule);
+  }
+  .searchwrap form{flex:1;display:flex;align-items:center;gap:12px;min-width:0}
+  .searchwrap input{
+    flex:1;min-width:0;border:0;outline:0;background:transparent;
+    font-family:var(--serif);font-size:18px;color:var(--ink);
+    padding:6px 0;border-bottom:1px solid transparent;
+  }
+  .searchwrap input::placeholder{color:var(--ink-3);font-style:italic}
+  .searchwrap form:focus-within input{border-bottom-color:var(--accent)}
+  .searchwrap .go{
+    border:1px solid var(--ink);background:transparent;color:var(--ink);
+    font-family:var(--sans);font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+    padding:8px 14px;cursor:pointer;
+    transition:background .18s var(--ease),color .18s var(--ease);
+  }
+  .searchwrap .go:hover{background:var(--ink);color:var(--paper)}
+  .searchwrap .engines{display:flex;gap:12px;font-size:10px;letter-spacing:.14em;text-transform:uppercase}
+  .searchwrap .engines button{
+    border:0;background:transparent;padding:0 0 3px;color:var(--ink-3);
+    font-family:var(--sans);font-size:10px;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;
+    border-bottom:1px solid transparent;
+  }
+  .searchwrap .engines button.on{color:var(--accent);border-bottom-color:var(--accent)}
+
+  /* ---------- 主体三栏 ---------- */
+  .layout{
+    max-width:1320px;margin:0 auto;
+    display:grid;grid-template-columns:168px minmax(0,1fr) 300px;gap:clamp(20px,3vw,44px);
+    padding-top:26px;
+    align-items:start;
+  }
+  .label{
+    font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3);
+    padding-bottom:10px;margin-bottom:12px;border-bottom:1px solid var(--rule);
+  }
+
+  /* 左侧分类 */
+  .cats{display:flex;flex-direction:column;gap:1px}
+  .cat{
+    display:flex;align-items:baseline;gap:9px;padding:9px 0;
+    border:0;background:transparent;width:100%;text-align:left;cursor:pointer;
+    font-family:var(--sans);color:var(--ink-2);
+    border-bottom:1px solid var(--rule-soft);
+    transition:color .16s var(--ease),padding-left .16s var(--ease);
+  }
+  .cat:hover{color:var(--ink);padding-left:4px}
+  .cat__n{font-family:var(--serif);font-size:10px;color:var(--ink-3);width:16px;flex:none}
+  .cat__name{font-size:14px;flex:1}
+  .cat__c{font-family:var(--serif);font-size:10px;color:var(--ink-3)}
+  .cat.on{color:var(--ink)}
+  .cat.on .cat__name{font-weight:600}
+  .cat.on .cat__n{color:var(--accent)}
+  .cat.on .cat__c{color:var(--accent)}
+
+  .bookmarks{margin-top:26px}
+  .bm{
+    display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+    padding:7px 0;font-size:11.5px;color:var(--ink-2);
+    border-bottom:1px dotted var(--rule);
+  }
+  .bm span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bm b{font-family:var(--serif);font-size:10px;color:var(--ink-3);font-weight:400}
+
+  /* 中部链接列表 */
+  .sectionhead{
+    display:flex;align-items:baseline;justify-content:space-between;gap:16px;
+    padding-bottom:10px;border-bottom:1px solid var(--rule);
+  }
+  .sectionhead h2{
+    font-family:var(--serif);font-size:24px;font-weight:400;letter-spacing:-.01em;
+  }
+  .sectionhead h2 span{color:var(--accent);font-style:italic}
+  .sectionhead .count{
+    font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);
+  }
+
+  .links{display:grid;grid-template-columns:1fr 1fr;gap:0 clamp(20px,3vw,40px);margin-top:4px}
+  .link{
+    display:grid;grid-template-columns:26px minmax(0,1fr) auto;align-items:center;gap:10px;
+    padding:13px 6px 13px 0;text-decoration:none;color:inherit;
+    border-bottom:1px solid var(--rule-soft);
+    transition:background .16s var(--ease),padding-left .16s var(--ease);
+  }
+  .link:hover{background:linear-gradient(90deg,var(--accent-soft),transparent 85%);padding-left:8px}
+  .link__n{
+    font-family:var(--serif);font-size:10.5px;color:var(--ink-3);
+    font-variant-numeric:tabular-nums;
+  }
+  .link:hover .link__n{color:var(--accent)}
+  .link__body{min-width:0}
+  .link__title{
+    font-size:15px;font-weight:500;letter-spacing:.01em;
+    display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .link__host{
+    font-size:10px;letter-spacing:.06em;color:var(--ink-3);margin-top:3px;
+    display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .link__arrow{
+    font-family:var(--serif);font-size:13px;color:var(--ink-3);
+    opacity:0;transform:translateX(-4px);
+    transition:opacity .16s var(--ease),transform .16s var(--ease);
+  }
+  .link:hover .link__arrow{opacity:1;transform:translateX(0);color:var(--accent)}
+
+  /* 右栏 */
+  .rail{display:flex;flex-direction:column;gap:30px}
+
+  /* 日历 */
+  .cal__head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px}
+  .cal__month{font-family:var(--serif);font-size:16px}
+  .cal__nav{display:flex;gap:10px}
+  .cal__nav button{
+    border:0;background:transparent;cursor:pointer;color:var(--ink-3);
+    font-family:var(--serif);font-size:13px;padding:0;
+    transition:color .16s var(--ease);
+  }
+  .cal__nav button:hover{color:var(--accent)}
+  .cal__grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px}
+  .cal__wd{
+    text-align:center;font-size:9px;letter-spacing:.1em;color:var(--ink-3);
+    padding:0 0 7px;
+  }
+  .cal__d{
+    aspect-ratio:1;display:grid;place-items:center;
+    font-family:var(--serif);font-size:11.5px;color:var(--ink-2);
+    font-variant-numeric:tabular-nums;
+  }
+  .cal__d.wk{color:#a9685c}
+  .cal__d.out{color:rgba(27,23,16,.18)}
+  .cal__d.today{
+    color:var(--accent);font-weight:600;font-style:italic;
+    box-shadow:inset 0 0 0 1px var(--accent);
+    border-radius:50%;
+  }
+  .cal__foot{
+    margin-top:10px;padding-top:9px;border-top:1px solid var(--rule);
+    display:flex;justify-content:space-between;
+    font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);
+  }
+  .cal__foot b{font-family:var(--serif);font-size:11px;color:var(--ink)}
+
+  /* 待办 */
+  .todo{display:flex;flex-direction:column}
+  .todo__item{
+    display:flex;gap:10px;align-items:flex-start;padding:9px 0;
+    border-bottom:1px solid var(--rule-soft);cursor:pointer;
+  }
+  .todo__box{
+    width:12px;height:12px;flex:none;margin-top:3px;
+    border:1px solid var(--ink-2);position:relative;
+    transition:background .16s var(--ease),border-color .16s var(--ease);
+  }
+  .todo__item.is-done .todo__box{background:var(--accent);border-color:var(--accent)}
+  .todo__item.is-done .todo__box::after{
+    content:"";position:absolute;left:3px;top:0px;width:5px;height:8px;
+    border-right:1.5px solid #fff;border-bottom:1.5px solid #fff;
+    transform:rotate(40deg);
+  }
+  .todo__txt{font-size:12.5px;line-height:1.5;flex:1;min-width:0}
+  .todo__item.is-done .todo__txt{color:var(--ink-3);text-decoration:line-through}
+  .todo__due{font-family:var(--serif);font-size:10px;color:var(--ink-3);white-space:nowrap;padding-top:2px}
+  .todo__due.hot{color:var(--accent)}
+
+  /* 便笺 */
+  .note{
+    background:#fbf5e5;
+    border:1px solid rgba(27,23,16,.13);
+    padding:16px 16px 12px;
+    box-shadow:2px 3px 0 rgba(27,23,16,.06);
+  }
+  .note__label{
+    font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);
+    margin-bottom:8px;
+  }
+  .note__body{
+    font-family:var(--serif);font-size:13px;line-height:1.75;color:#42392a;outline:0;min-height:78px;
+  }
+  .note__body:empty::before{content:attr(data-ph);color:var(--ink-3);font-style:italic}
+  .note__foot{
+    margin-top:10px;padding-top:8px;border-top:1px dotted rgba(27,23,16,.18);
+    font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);
+    display:flex;justify-content:space-between;
+  }
+
+  /* 页脚 */
+  .foot{
+    max-width:1320px;margin:44px auto 0;padding-top:12px;
+    border-top:2px solid var(--ink);
+    display:flex;justify-content:space-between;gap:16px;
+    font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);
+  }
+
+  /* 响应式 */
+  @media (max-width:1080px){
+    .layout{grid-template-columns:150px minmax(0,1fr)}
+    .rail{grid-column:1 / -1;flex-direction:row;flex-wrap:wrap;gap:24px;margin-top:8px}
+    .rail > *{flex:1 1 260px}
+  }
+  @media (max-width:760px){
+    .layout{grid-template-columns:minmax(0,1fr);gap:24px}
+    .cats{flex-direction:row;flex-wrap:wrap;gap:0 18px;border-bottom:1px solid var(--rule)}
+    .cat{width:auto;border-bottom:0;padding:8px 0}
+    .bookmarks{margin-top:8px}
+    .links{grid-template-columns:1fr}
+    .head{grid-template-columns:1fr;gap:16px}
+    .head__weather{text-align:left}
+    .rail{flex-direction:column}
+    .searchwrap{flex-wrap:wrap}
+    .searchwrap .engines{order:3}
+  }
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <div class="utility">
+    <span><b>INDEX</b> &nbsp;/&nbsp; 个人导航</span>
+    <span class="utility__mid">第 07 期 · 每周整理</span>
+    <span class="utility__right">
+      <span>VOL. 2026</span>
+      <span id="topClock">19:42</span>
+    </span>
+  </div>
+
+  <div class="head">
+    <div>
+      <h1 id="greet">晚上好，<em>欢迎回来</em>。</h1>
+      <div class="head__sub"><i></i><span id="todayText">2026 年 10 月 31 日 · 星期六 · 宜整理书签</span></div>
+    </div>
+    <div class="head__weather">
+      <div class="temp">24<sup>°C</sup></div>
+      <div class="meta">武汉 · 晴间多云 / 湿度 61%</div>
+    </div>
+  </div>
+</div>
+
+<div class="searchwrap">
+  <form id="searchForm">
+    <input id="q" type="text" placeholder="搜索，或直接输入网址…" autocomplete="off" spellcheck="false">
+    <button class="go" type="submit">搜索 ↵</button>
+  </form>
+  <div class="engines" id="engines"></div>
+</div>
+
+<div class="layout">
+  <!-- 分类 -->
+  <aside>
+    <p class="label">栏目</p>
+    <div class="cats" id="cats"></div>
+
+    <div class="bookmarks">
+      <p class="label">书签文件夹</p>
+      <div class="bm"><span>工作</span><b>12</b></div>
+      <div class="bm"><span>设计参考</span><b>9</b></div>
+      <div class="bm"><span>团队文档</span><b>5</b></div>
+      <div class="bm"><span>侧项目</span><b>7</b></div>
+    </div>
+  </aside>
+
+  <!-- 链接 -->
+  <main>
+    <div class="sectionhead">
+      <h2><span id="secNo">01</span> <span id="secName">常用</span></h2>
+      <span class="count" id="secCount">8 个站点</span>
+    </div>
+    <div class="links" id="links"></div>
+  </main>
+
+  <!-- 右栏 -->
+  <aside class="rail">
+    <section>
+      <p class="label">本月</p>
+      <div class="cal__head">
+        <span class="cal__month" id="calTitle">2026 年 10 月</span>
+        <div class="cal__nav">
+          <button data-cal="-1" aria-label="上个月">‹</button>
+          <button data-cal="1" aria-label="下个月">›</button>
+        </div>
+      </div>
+      <div class="cal__grid" id="calGrid"></div>
+      <div class="cal__foot"><span>工作日 <b>18</b> 天</span><span>国庆 · 补班 1 天</span></div>
+    </section>
+
+    <section>
+      <p class="label">今日待办</p>
+      <div class="todo" id="todo">
+        <div class="todo__item">
+          <span class="todo__box"></span>
+          <span class="todo__txt">定下导航的视觉方向</span>
+          <span class="todo__due hot">今天</span>
+        </div>
+        <div class="todo__item">
+          <span class="todo__box"></span>
+          <span class="todo__txt">把三套原型发到群里</span>
+          <span class="todo__due">11-02</span>
+        </div>
+        <div class="todo__item is-done">
+          <span class="todo__box"></span>
+          <span class="todo__txt">整理书签文件夹层级</span>
+          <span class="todo__due">10-29</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <p class="label">便笺</p>
+      <div class="note">
+        <div class="note__label">NOTE TO SELF</div>
+        <div class="note__body" contentededge-navle="true" spellcheck="false" data-ph="写点什么…">留白比装饰更贵。
+先减掉一条分隔线，再加一个颜色。</div>
+        <div class="note__foot"><span>自动保存</span><span>19:36</span></div>
+      </div>
+    </section>
+  </aside>
+</div>
+
+<div class="foot">
+  <span>edge-nav · 手工装订</span>
+  <span>Set in Songti &amp; Palatino</span>
+  <span>2026 / 10</span>
+</div>
+
+<script>
+  const TABS = [
+    { id:'common', name:'常用', items:[
+      { name:'GitHub', host:'github.com', url:'https://github.com' },
+      { name:'掘金', host:'juejin.cn', url:'https://juejin.cn' },
+      { name:'哔哩哔哩', host:'bilibili.com', url:'https://www.bilibili.com' },
+      { name:'知乎', host:'zhihu.com', url:'https://www.zhihu.com' },
+      { name:'腾讯文档', host:'docs.qq.com', url:'https://docs.qq.com' },
+      { name:'高德地图', host:'amap.com', url:'https://ditu.amap.com' },
+      { name:'飞书', host:'feishu.cn', url:'https://www.feishu.cn' },
+      { name:'微信读书', host:'weread.qq.com', url:'https://weread.qq.com' }
+    ]},
+    { id:'dev', name:'开发', items:[
+      { name:'MDN Web Docs', host:'developer.mozilla.org', url:'https://developer.mozilla.org' },
+      { name:'Vue 3 文档', host:'cn.vuejs.org', url:'https://cn.vuejs.org' },
+      { name:'Stack Overflow', host:'stackoverflow.com', url:'https://stackoverflow.com' },
+      { name:'npm', host:'npmjs.com', url:'https://www.npmjs.com' },
+      { name:'Vite', host:'cn.vitejs.dev', url:'https://cn.vitejs.dev' },
+      { name:'Can I use', host:'caniuse.com', url:'https://caniuse.com' },
+      { name:'阮一峰的网络日志', host:'ruanyifeng.com', url:'https://www.ruanyifeng.com/blog/' },
+      { name:'CodePen', host:'codepen.io', url:'https://codepen.io' }
+    ]},
+    { id:'design', name:'设计', items:[
+      { name:'Figma', host:'figma.com', url:'https://www.figma.com' },
+      { name:'Dribbble', host:'dribbble.com', url:'https://dribbble.com' },
+      { name:'Behance', host:'behance.net', url:'https://www.behance.net' },
+      { name:'Unsplash', host:'unsplash.com', url:'https://unsplash.com' },
+      { name:'iconfont', host:'iconfont.cn', url:'https://www.iconfont.cn' },
+      { name:'Coolors', host:'coolors.co', url:'https://coolors.co' }
+    ]},
+    { id:'read', name:'阅读', items:[
+      { name:'少数派', host:'sspai.com', url:'https://sspai.com' },
+      { name:'即刻', host:'okjike.com', url:'https://web.okjike.com' },
+      { name:'Hacker News', host:'news.ycombinator.com', url:'https://news.ycombinator.com' },
+      { name:'V2EX', host:'v2ex.com', url:'https://www.v2ex.com' },
+      { name:'豆瓣', host:'douban.com', url:'https://www.douban.com' },
+      { name:'Product Hunt', host:'producthunt.com', url:'https://www.producthunt.com' }
+    ]}
+  ];
+
+  const catsEl = document.getElementById('cats');
+  const linksEl = document.getElementById('links');
+  let active = 'common';
+
+  function renderCats(){
+    catsEl.innerHTML = TABS.map((t, i) => `
+      <button class="cat ${t.id === active ? 'on' : ''}" data-id="${t.id}">
+        <span class="cat__n">${String(i + 1).padStart(2, '0')}</span>
+        <span class="cat__name">${t.name}</span>
+        <span class="cat__c">${t.items.length}</span>
+      </button>`).join('');
+  }
+
+  function renderLinks(){
+    const tab = TABS.find(t => t.id === active) || TABS[0];
+    const index = TABS.indexOf(tab) + 1;
+    document.getElementById('secNo').textContent = String(index).padStart(2, '0');
+    document.getElementById('secName').textContent = tab.name;
+    document.getElementById('secCount').textContent = `${tab.items.length} 个站点`;
+    linksEl.innerHTML = tab.items.map((it, i) => `
+      <a class="link" href="${it.url}" target="_blank" rel="noopener noreferrer">
+        <span class="link__n">${String(i + 1).padStart(2, '0')}</span>
+        <span class="link__body">
+          <span class="link__title">${it.name}</span>
+          <span class="link__host">${it.host}</span>
+        </span>
+        <span class="link__arrow">↗</span>
+      </a>`).join('');
+  }
+
+  catsEl.addEventListener('click', e => {
+    const btn = e.target.closest('.cat');
+    if (!btn) return;
+    active = btn.dataset.id;
+    renderCats(); renderLinks();
+  });
+
+  /* 搜索 */
+  const ENGINES = [
+    { name:'Bing', url:'https://www.bing.com/search?q=' },
+    { name:'Google', url:'https://www.google.com/search?q=' },
+    { name:'百度', url:'https://www.baidu.com/s?wd=' }
+  ];
+  let engine = 0;
+  const enginesEl = document.getElementById('engines');
+  function renderEngines(){
+    enginesEl.innerHTML = ENGINES.map((e, i) =>
+      `<button class="${i === engine ? 'on' : ''}" data-i="${i}">${e.name}</button>`).join('');
+  }
+  enginesEl.addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    engine = Number(btn.dataset.i);
+    renderEngines();
+  });
+  renderEngines();
+
+  document.getElementById('searchForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const value = document.getElementById('q').value.trim();
+    if (!value) return;
+    const isUrl = /^https?:\/\//i.test(value) || /^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(value);
+    window.open(isUrl ? (/^https?:\/\//i.test(value) ? value : 'https://' + value)
+                     : ENGINES[engine].url + encodeURIComponent(value), '_blank', 'noopener');
+  });
+
+  /* 时钟 */
+  const pad = n => String(n).padStart(2, '0');
+  const WD = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+  function tick(){
+    const d = new Date();
+    const h = d.getHours();
+    const w = h < 5 ? '夜深了' : h < 9 ? '早上好' : h < 12 ? '上午好'
+            : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好';
+    document.getElementById('greet').innerHTML = `${w}，<em>欢迎回来</em>。`;
+    document.getElementById('todayText').textContent =
+      `${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日 · ${WD[d.getDay()]} · 宜整理书签`;
+    document.getElementById('topClock').textContent = `${pad(h)}:${pad(d.getMinutes())}`;
+  }
+  tick(); setInterval(tick, 1000);
+
+  /* 日历 */
+  let calRef = new Date();
+  function renderCal(){
+    const y = calRef.getFullYear(), m = calRef.getMonth();
+    const first = new Date(y, m, 1).getDay();
+    const days = new Date(y, m + 1, 0).getDate();
+    const prevDays = new Date(y, m, 0).getDate();
+    const today = new Date();
+    const isThisMonth = today.getFullYear() === y && today.getMonth() === m;
+    document.getElementById('calTitle').textContent = `${y} 年 ${m + 1} 月`;
+    let html = ['日','一','二','三','四','五','六']
+      .map(w => `<span class="cal__wd">${w}</span>`).join('');
+    for (let i = first - 1; i >= 0; i--) html += `<span class="cal__d out">${prevDays - i}</span>`;
+    for (let d = 1; d <= days; d++) {
+      const wd = (first + d - 1) % 7;
+      const cls = ['cal__d'];
+      if (wd === 0 || wd === 6) cls.push('wk');
+      if (isThisMonth && d === today.getDate()) cls.push('today');
+      html += `<span class="${cls.join(' ')}">${d}</span>`;
+    }
+    const rest = (7 - ((first + days) % 7)) % 7;
+    for (let d = 1; d <= rest; d++) html += `<span class="cal__d out">${d}</span>`;
+    document.getElementById('calGrid').innerHTML = html;
+  }
+  renderCal();
+  document.querySelectorAll('[data-cal]').forEach(btn => btn.addEventListener('click', () => {
+    calRef.setMonth(calRef.getMonth() + Number(btn.dataset.cal));
+    renderCal();
+  }));
+
+  document.getElementById('todo').addEventListener('click', e => {
+    const item = e.target.closest('.todo__item');
+    if (item) item.classList.toggle('is-done');
+  });
+
+  renderCats(); renderLinks();
+</script>
+</body>
+</html>

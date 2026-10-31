@@ -1,0 +1,471 @@
+/* ---------------- 设计令牌 ---------------- */
+/*
+ * 两套视觉语言，与深浅色正交：<html data-theme="light|dark" data-style="apple|win11">
+ *   apple  玻璃 + 22px 大圆角 + 白色高光边 + 菜单栏 / Dock
+ *   win11  亚克力渐变 + 8px 圆角 + 1px 细描边 + 顶栏 / 居中任务栏
+ *
+ * 语义令牌（改主题只动这里，不要在组件里写死颜色/圆角）：
+ *   --card-bg         卡片背景（可以是纯色，也可以是渐变）
+ *   --surface         半透明材质色（抽屉、弹层等需要纯色值时用）
+ *   --border-card     卡片外描边（苹果是白色高光边，Win11 是深色细边）
+ *   --blur-card/--blur-sat  卡片毛玻璃的模糊半径与饱和度
+ *   --title-size/--title-color  卡片标题排版
+ *   --act-size/--act-radius/--act-bg  卡片右上角按钮形态（圆形 vs 方形）
+ *   --search-*        搜索框几何与聚焦表现
+ *   --tab-radius / --tabs-line  分组标签页（玻璃药丸 vs 下划线指示条）
+ *   --check-size/--check-radius  待办勾选框（圆形 vs 方形）
+ *   --note-bg/--note-text  便笺配色
+ *   --bar-*           外壳（菜单栏 / 任务栏）材质
+ *   --shade-rgb       壁纸遮罩色，JS 里拼 rgba 用
+ *   --on-accent       叠在主色上的文字色
+ */
+
+/* ================= 苹果风（默认）· 浅色 ================= */
+:root {
+  --bg: #cfd9ee;
+  --surface: rgba(255, 255, 255, 0.62);
+  --surface-solid: rgba(255, 255, 255, 0.82);
+  --surface-hover: rgba(255, 255, 255, 0.72);
+  --line: rgba(22, 22, 26, 0.08);
+  --line-strong: rgba(22, 22, 26, 0.14);
+  --border-card: rgba(255, 255, 255, 0.66);
+  --card-bg: var(--surface);
+
+  --control-bg: rgba(255, 255, 255, 0.55);
+  --control-hover: rgba(255, 255, 255, 0.78);
+  --icon-tile: rgba(255, 255, 255, 0.6);
+  /* 设置抽屉要压得住背景，比卡片更实 */
+  --sheet-bg: rgba(250, 251, 255, 0.9);
+
+  --text: #16161a;
+  --text-2: rgba(22, 22, 26, 0.66);
+  --text-3: rgba(22, 22, 26, 0.44);
+
+  --accent: #0a6cd8;
+  --accent-2: #3f9bff;
+  --accent-hover: #0059b8;
+  --accent-weak: rgba(10, 108, 216, 0.12);
+  --accent-line: rgba(10, 108, 216, 0.32);
+  --grad-accent: linear-gradient(135deg, #0a84ff 0%, #0a6cd8 100%);
+  --on-accent: #ffffff;
+
+  --danger: #d8443c;
+  --danger-weak: rgba(216, 68, 60, 0.12);
+  --warn: #d97706;
+
+  --weekend: #c96b6b;
+  --weekend-weak: rgba(201, 107, 107, 0.12);
+  --holiday: #d8443c;
+  --holiday-weak: rgba(216, 68, 60, 0.1);
+
+  --shade-rgb: 255, 255, 255;
+  --overlay: rgba(17, 24, 39, 0.22);
+
+  /* 圆角：22px 大圆角 + 圆形控件是苹果风的骨架 */
+  --radius-sm: 9px;
+  --radius: 16px;
+  --radius-lg: 22px;
+  --radius-block: 12px;
+  --radius-tile: 12px;
+  --radius-icon: 12px;
+  --radius-control: 8px;
+  --radius-chip: 7px;
+  --radius-pill: 999px;
+
+  /* 材质与投影：大而柔，靠白色高光边分层 */
+  --blur-card: 44px;
+  --blur-sat: 1.7;
+  --card-pad: 16px 18px;
+  --shadow-1: 0 1px 3px rgba(17, 24, 39, 0.1);
+  --shadow-card: 0 20px 44px -26px rgba(12, 18, 40, 0.5);
+  --shadow-card-hover: 0 24px 52px -26px rgba(12, 18, 40, 0.58);
+  --shadow-pop: 0 28px 64px -28px rgba(12, 18, 40, 0.58);
+
+  /* 概览卡的时间排版：苹果是「大而轻」 */
+  --clock-size: 48px;
+  --clock-weight: 250;
+  --clock-spacing: -0.045em;
+  --greet-size: 12.5px;
+  --greet-weight: 500;
+
+  /* 磁贴：42px 圆角图标 */
+  --tile-icon-size: 42px;
+
+  /* 卡片头与卡片按钮 */
+  --title-size: 12.5px;
+  --title-color: var(--text-2);
+  --head-icon-bg: transparent;
+  --head-icon-color: var(--text-3);
+  --act-size: 22px;
+  --act-radius: 50%;
+  --act-bg: var(--control-bg);
+  --act-color: var(--text-2);
+
+  /* 搜索框：比卡片更实的白片 + 描边 + 投影，聚焦时外发光 */
+  --search-h: 44px;
+  --search-radius: 12px;
+  --search-bg: rgba(255, 255, 255, 0.92);
+  --search-border: 1px solid rgba(22, 22, 26, 0.12);
+  --search-border-bottom: 1px solid rgba(22, 22, 26, 0.12);
+  --search-pad: 0 8px 0 13px;
+  --search-font: 14px;
+  --search-shadow: 0 1px 2px rgba(12, 18, 40, 0.06), 0 14px 28px -20px rgba(12, 18, 40, 0.5);
+  --search-focus-border: var(--accent);
+  --search-focus-shadow: 0 0 0 3px var(--accent-weak);
+  --search-focus-bg: #ffffff;
+  --search-btn: 30px;
+  --search-submit: 34px;
+
+  /* 标签页：玻璃药丸，选中是「白色玻璃片 + 轻微投影」 */
+  --tab-radius: 8px;
+  --tab-active-bg: var(--surface-solid);
+  --tab-active-color: var(--text);
+  --tab-active-shadow: 0 1px 3px rgba(10, 14, 30, 0.1);
+  --tab-active-weight: 600;
+  --tab-marker: transparent;
+  --tabs-line: transparent;
+
+  /* 勾选框：圆形 */
+  --check-size: 15px;
+  --check-radius: 50%;
+  --check-border: 1.5px;
+
+  /* 便笺：苹果的黄色便签 */
+  --note-bg: rgba(255, 246, 214, 0.86);
+  --note-text: #4a3f24;
+
+  /* 外壳：菜单栏 + Dock */
+  --bar-bg: rgba(255, 255, 255, 0.46);
+  --bar-line: rgba(22, 22, 26, 0.08);
+  --bar-text: rgba(22, 22, 26, 0.88);
+  --bar-blur: 26px;
+  --bar-sat: 1.8;
+  --bar-radius: 22px;
+  --bar-shadow: 0 18px 44px -22px rgba(10, 14, 30, 0.8);
+
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+    'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', Arial, sans-serif;
+
+  color-scheme: light;
+}
+
+/* ================= 苹果风 · 深色 ================= */
+[data-theme='dark'] {
+  --bg: #0a1122;
+  --surface: rgba(26, 28, 40, 0.62);
+  --surface-solid: rgba(38, 40, 56, 0.8);
+  --surface-hover: rgba(255, 255, 255, 0.1);
+  --line: rgba(255, 255, 255, 0.12);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  --border-card: rgba(255, 255, 255, 0.14);
+
+  --control-bg: rgba(255, 255, 255, 0.08);
+  --control-hover: rgba(255, 255, 255, 0.14);
+  --icon-tile: rgba(255, 255, 255, 0.09);
+  --sheet-bg: rgba(30, 33, 44, 0.92);
+
+  --text: #f5f5f7;
+  --text-2: rgba(245, 245, 247, 0.7);
+  --text-3: rgba(245, 245, 247, 0.48);
+
+  --accent: #4da3ff;
+  --accent-2: #8ac2ff;
+  --accent-hover: #7bbcff;
+  --accent-weak: rgba(77, 163, 255, 0.16);
+  --accent-line: rgba(77, 163, 255, 0.45);
+  --grad-accent: linear-gradient(135deg, #4da3ff 0%, #2b7fd8 100%);
+  --on-accent: #04182b;
+
+  --danger: #ff7269;
+  --danger-weak: rgba(255, 114, 105, 0.16);
+  --warn: #fbbf24;
+
+  --weekend: #f09295;
+  --weekend-weak: rgba(240, 146, 149, 0.16);
+  --holiday: #ff6b70;
+  --holiday-weak: rgba(255, 107, 112, 0.16);
+
+  --shade-rgb: 6, 10, 20;
+  --overlay: rgba(2, 5, 12, 0.6);
+
+  --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --shadow-card: 0 28px 64px -30px rgba(0, 0, 0, 0.85);
+  --shadow-card-hover: 0 32px 72px -30px rgba(0, 0, 0, 0.9);
+  --shadow-pop: 0 34px 80px -30px rgba(0, 0, 0, 0.85);
+
+  --note-bg: rgba(255, 214, 102, 0.14);
+  --note-text: #f0dfb4;
+
+  /* 深色下搜索框是一层浅雾，不能用白色实底 */
+  --search-bg: rgba(255, 255, 255, 0.1);
+  --search-border: 1px solid rgba(255, 255, 255, 0.16);
+  --search-border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  --search-shadow: 0 12px 26px -20px rgba(0, 0, 0, 0.8);
+  --search-focus-bg: rgba(255, 255, 255, 0.14);
+
+  --bar-bg: rgba(14, 16, 26, 0.52);
+  --bar-line: rgba(255, 255, 255, 0.1);
+  --bar-text: rgba(245, 245, 247, 0.9);
+
+  color-scheme: dark;
+}
+
+/* ================= Win11 风 · 浅色 ================= */
+[data-style='win11'] {
+  --bg: #dbe7f6;
+  --surface: rgba(255, 255, 255, 0.8);
+  --surface-solid: rgba(250, 252, 255, 0.94);
+  --surface-hover: rgba(0, 0, 0, 0.055);
+  --line: rgba(0, 0, 0, 0.085);
+  --line-strong: rgba(0, 0, 0, 0.16);
+  --border-card: rgba(0, 0, 0, 0.09);
+  /* 亚克力：上下两档的渐变片，比纯色更有「板材」感 */
+  --card-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(250, 252, 255, 0.72));
+
+  --control-bg: rgba(0, 0, 0, 0.03);
+  --control-hover: rgba(0, 0, 0, 0.055);
+  --icon-tile: #ffffff;
+  --sheet-bg: rgba(250, 252, 255, 0.95);
+
+  --text: #1a1a1a;
+  --text-2: rgba(26, 26, 26, 0.66);
+  --text-3: rgba(26, 26, 26, 0.46);
+
+  --accent: #0067c0;
+  --accent-2: #0067c0;
+  --accent-hover: #005ba8;
+  --accent-weak: rgba(0, 103, 192, 0.1);
+  --accent-line: rgba(0, 103, 192, 0.34);
+  --grad-accent: linear-gradient(135deg, #0067c0, #0067c0);
+  --on-accent: #ffffff;
+
+  --danger: #c42b1c;
+  --danger-weak: rgba(196, 43, 28, 0.1);
+  --warn: #9d5d00;
+
+  --weekend: #c05a5a;
+  --weekend-weak: rgba(192, 90, 90, 0.12);
+  --holiday: #c42b1c;
+  --holiday-weak: rgba(196, 43, 28, 0.1);
+
+  --shade-rgb: 255, 255, 255;
+  --overlay: rgba(2, 5, 12, 0.5);
+
+  /* 8px 圆角 + 4px 方形控件是 Fluent 的骨架 */
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 8px;
+  --radius-block: 4px;
+  --radius-tile: 4px;
+  --radius-icon: 6px;
+  --radius-control: 4px;
+  --radius-chip: 3px;
+  --radius-pill: 4px;
+
+  --blur-card: 38px;
+  --blur-sat: 1.5;
+  --card-pad: 16px;
+  --shadow-1: 0 1px 2px rgba(0, 30, 60, 0.08);
+  --shadow-card: 0 10px 26px -20px rgba(0, 30, 60, 0.55);
+  --shadow-card-hover: 0 14px 32px -20px rgba(0, 30, 60, 0.6);
+  --shadow-pop: 0 22px 52px -22px rgba(0, 30, 60, 0.55);
+
+  /* 概览卡的时间排版：Win11 更克制 */
+  --clock-size: 44px;
+  --clock-weight: 300;
+  --clock-spacing: -0.025em;
+  --greet-size: 12px;
+  --greet-weight: 400;
+
+  --tile-icon-size: 36px;
+
+  --title-size: 13.5px;
+  --title-color: var(--text);
+  --head-icon-bg: transparent;
+  --head-icon-color: var(--text-3);
+  --act-size: 28px;
+  --act-radius: 4px;
+  --act-bg: transparent;
+  --act-color: var(--text-2);
+
+  /* 搜索框：38px 高、4px 圆角、纯白底 + 加粗底边，聚焦只点亮底边 */
+  --search-h: 38px;
+  --search-radius: 4px;
+  --search-bg: #ffffff;
+  --search-border: 1px solid rgba(0, 0, 0, 0.14);
+  --search-border-bottom: 1.6px solid rgba(0, 0, 0, 0.22);
+  --search-pad: 0 10px;
+  --search-font: 13.5px;
+  --search-shadow: 0 1px 2px rgba(0, 30, 60, 0.1);
+  --search-focus-border: rgba(0, 0, 0, 0.2);
+  --search-focus-shadow: 0 1px 3px rgba(0, 103, 192, 0.18);
+  --search-focus-bg: #ffffff;
+  --search-btn: 28px;
+  --search-submit: 30px;
+
+  /* 标签页：下划线指示条，选中不加底色 */
+  --tab-radius: 4px 4px 0 0;
+  --tab-active-bg: transparent;
+  --tab-active-color: var(--text);
+  --tab-active-shadow: none;
+  --tab-active-weight: 600;
+  --tab-marker: var(--accent);
+  --tabs-line: var(--line);
+
+  --check-size: 15px;
+  --check-radius: 3px;
+  --check-border: 1.4px;
+
+  --note-bg: rgba(255, 255, 255, 0.62);
+  --note-text: var(--text-2);
+
+  /* 外壳：顶栏 + 居中任务栏 */
+  --bar-bg: rgba(243, 246, 250, 0.84);
+  --bar-line: rgba(0, 0, 0, 0.07);
+  --bar-text: #1a1a1a;
+  --bar-blur: 40px;
+  --bar-sat: 1.6;
+  --bar-radius: 8px;
+  --bar-shadow: 0 16px 40px -22px rgba(0, 0, 0, 0.6);
+
+  --font: 'Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI', 'Microsoft YaHei UI',
+    'PingFang SC', system-ui, sans-serif;
+
+  color-scheme: light;
+}
+
+/* ================= Win11 风 · 深色 ================= */
+[data-style='win11'][data-theme='dark'] {
+  --bg: #07121f;
+  --surface: rgba(48, 52, 60, 0.82);
+  --surface-solid: rgba(38, 41, 48, 0.94);
+  --surface-hover: rgba(255, 255, 255, 0.085);
+  --line: rgba(255, 255, 255, 0.085);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --border-card: rgba(255, 255, 255, 0.085);
+  --card-bg: linear-gradient(180deg, rgba(48, 52, 60, 0.82), rgba(38, 41, 48, 0.78));
+
+  --control-bg: rgba(255, 255, 255, 0.045);
+  --control-hover: rgba(255, 255, 255, 0.085);
+  --icon-tile: rgba(255, 255, 255, 0.06);
+  --sheet-bg: rgba(38, 41, 48, 0.95);
+
+  --text: #f2f5f9;
+  --text-2: rgba(242, 245, 249, 0.7);
+  --text-3: rgba(242, 245, 249, 0.5);
+
+  --accent: #60cdff;
+  --accent-2: #60cdff;
+  --accent-hover: #8adcff;
+  --accent-weak: rgba(96, 205, 255, 0.16);
+  --accent-line: rgba(96, 205, 255, 0.45);
+  --grad-accent: linear-gradient(135deg, #60cdff, #60cdff);
+  --on-accent: #04222f;
+
+  --danger: #ff9c9c;
+  --danger-weak: rgba(255, 156, 156, 0.16);
+  --warn: #fbbf24;
+
+  --weekend: #ff9c9c;
+  --weekend-weak: rgba(255, 156, 156, 0.16);
+  --holiday: #ff6b70;
+  --holiday-weak: rgba(255, 107, 112, 0.16);
+
+  --shade-rgb: 6, 10, 20;
+  --overlay: rgba(2, 5, 12, 0.6);
+
+  --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --shadow-card: 0 14px 34px -22px rgba(0, 0, 0, 0.95);
+  --shadow-card-hover: 0 18px 40px -22px rgba(0, 0, 0, 0.98);
+  --shadow-pop: 0 24px 56px -24px rgba(0, 0, 0, 0.9);
+
+  --note-bg: rgba(255, 255, 255, 0.04);
+  --note-text: var(--text-2);
+
+  --search-bg: rgba(255, 255, 255, 0.06);
+  --search-border: 1px solid rgba(255, 255, 255, 0.16);
+  --search-border-bottom: 1.6px solid rgba(255, 255, 255, 0.3);
+  --search-shadow: none;
+  --search-focus-border: rgba(255, 255, 255, 0.24);
+  --search-focus-bg: rgba(255, 255, 255, 0.09);
+
+  --bar-bg: rgba(32, 36, 44, 0.8);
+  --bar-line: rgba(255, 255, 255, 0.09);
+  --bar-text: #f2f5f9;
+
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  transition: background 0.3s ease, color 0.25s ease;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: var(--accent-weak);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(127, 138, 159, 0.35);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(127, 138, 159, 0.55);
+}
+
+/* 拖拽时禁止选中文字，避免出现蓝色选区 */
+body.is-dragging {
+  user-select: none;
+  cursor: grabbing;
+}

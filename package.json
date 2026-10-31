@@ -1,0 +1,25 @@
+{
+  "name": "edge-nav",
+  "private": true,
+  "version": "0.5.0",
+  "type": "module",
+  "description": "Manifest V3 可自由拖拽布局的自定义新标签页扩展",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "watch": "vite build --watch",
+    "preview": "vite preview --port 5274 --strictPort",
+    "icons": "node scripts/gen-icons.mjs",
+    "typecheck": "vue-tsc --noEmit",
+    "check:version": "node scripts/check-version.mjs"
+  },
+  "dependencies": {
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.1.4",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "vue-tsc": "^2.1.10"
+  }
+}

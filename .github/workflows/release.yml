@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 构建并发布 zip
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 校验版本号一致
+        run: node scripts/check-version.mjs
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 构建产物
+        run: npm run build
+
+      - name: 校验 dist 可加载
+        run: |
+          set -e
+          for f in manifest.json index.html; do
+            test -f "dist/$f" || { echo "✗ 缺少 dist/$f"; exit 1; }
+          done
+          node -e "
+            const m = require('./dist/manifest.json');
+            if (m.manifest_version !== 3) { console.error('✗ manifest_version 不是 3'); process.exit(1); }
+            if (!m.chrome_url_overrides || !m.chrome_url_overrides.newtab) { console.error('✗ 缺少 newtab 覆盖'); process.exit(1); }
+            console.log('✓ dist 清单校验通过：v' + m.version);
+          "
+
+      - name: 解析版本与标签
+        id: meta
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            TAG="v$VERSION"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "zip=edge-nav-$TAG.zip" >> "$GITHUB_OUTPUT"
+          echo "解析结果：版本 $VERSION / 标签 $TAG"
+
+      - name: 打包扩展
+        shell: bash
+        run: |
+          set -e
+          cd dist
+          zip -qr "../${{ steps.meta.outputs.zip }}" .
+          cd ..
+          ls -lh "${{ steps.meta.outputs.zip }}"
+
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: edge-nav ${{ steps.meta.outputs.tag }}
+          files: ${{ steps.meta.outputs.zip }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            ## 安装方式
+
+            1. 下载下方 `${{ steps.meta.outputs.zip }}` 并解压到任意目录（解压后应直接看到 `manifest.json`）
+            2. 打开 `edge://extensions`（Chrome 为 `chrome://extensions`）
+            3. 开启「开发人员模式」→「加载解压缩的扩展」→ 选择解压后的目录
+            4. 新建标签页即可使用
+
+            > 本地开发也可直接执行 `npm ci && npm run build`，加载 `dist/` 目录。
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

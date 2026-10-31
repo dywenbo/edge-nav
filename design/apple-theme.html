@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>edge-nav · 苹果风（浅色 / 深色）</title>
+<style>
+  :root{
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","PingFang SC","Helvetica Neue",Arial,sans-serif;
+    --radius:22px;
+    --gap:16px;
+    --glass:rgba(255,255,255,.62);
+    --glass-strong:rgba(255,255,255,.82);
+    --hover:rgba(255,255,255,.72);
+    --line:rgba(255,255,255,.66);
+    --text:#16161a;
+    --text-2:rgba(22,22,26,.62);
+    --text-3:rgba(22,22,26,.38);
+    --accent:#0a6cd8;
+    --accent-soft:rgba(10,108,216,.12);
+    --danger:#d8443c;
+    --shadow:0 22px 50px -30px rgba(12,18,40,.55);
+    --menubar:rgba(255,255,255,.46);
+    --menubar-text:rgba(22,22,26,.88);
+    --menubar-line:rgba(22,22,26,.08);
+    --chip:rgba(255,255,255,.55);
+    --note-bg:rgba(255,246,214,.86);
+    --note-text:#4a3f24;
+    --dock:rgba(255,255,255,.35);
+    --dock-line:rgba(255,255,255,.55);
+    --ease:cubic-bezier(.22,.61,.36,1);
+  }
+  html[data-theme="dark"]{
+    --glass:rgba(26,28,40,.62);
+    --glass-strong:rgba(38,40,56,.80);
+    --hover:rgba(255,255,255,.10);
+    --line:rgba(255,255,255,.14);
+    --text:#f5f5f7;
+    --text-2:rgba(245,245,247,.66);
+    --text-3:rgba(245,245,247,.40);
+    --accent:#4da3ff;
+    --accent-soft:rgba(77,163,255,.16);
+    --danger:#ff7269;
+    --shadow:0 28px 64px -30px rgba(0,0,0,.85);
+    --menubar:rgba(14,16,26,.52);
+    --menubar-text:rgba(245,245,247,.90);
+    --menubar-line:rgba(255,255,255,.10);
+    --chip:rgba(255,255,255,.08);
+    --note-bg:rgba(255,214,102,.14);
+    --note-text:#f0dfb4;
+    --dock:rgba(20,22,34,.46);
+    --dock-line:rgba(255,255,255,.12);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:var(--font);
+    color:var(--text);
+    background:#cfd9ee;
+    min-height:100vh;
+    padding:0 clamp(14px,2.6vw,40px) 24px;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+    transition:background .4s var(--ease),color .3s var(--ease);
+  }
+
+  /* ---------- 壁纸：两层交叉淡入 ---------- */
+  .wall{position:fixed;inset:0;z-index:-1;overflow:hidden;background:#cfd9ee}
+  .wall::before,.wall::after{
+    content:"";position:absolute;inset:-6%;
+    transition:opacity .45s var(--ease);
+  }
+  .wall::before{
+    opacity:1;
+    background:
+      radial-gradient(760px 620px at 8% -6%, #ffd3e2, transparent 62%),
+      radial-gradient(820px 660px at 92% 2%, #c9cdff, transparent 64%),
+      radial-gradient(900px 720px at 76% 100%, #b3e4ff, transparent 62%),
+      radial-gradient(700px 620px at 12% 96%, #ffe6c2, transparent 62%),
+      linear-gradient(160deg,#eaf0ff 0%, #dfe9ff 45%, #eef4ff 100%);
+  }
+  .wall::after{
+    opacity:0;
+    background:
+      radial-gradient(760px 620px at 10% -4%, rgba(255,110,170,.55), transparent 62%),
+      radial-gradient(820px 660px at 92% 4%, rgba(120,110,255,.60), transparent 64%),
+      radial-gradient(900px 720px at 74% 102%, rgba(52,176,255,.42), transparent 62%),
+      linear-gradient(158deg,#221a3e 0%, #161a3c 38%, #0a1122 100%);
+  }
+  html[data-theme="dark"] .wall{background:#0a1122}
+  html[data-theme="dark"] .wall::before{opacity:0}
+  html[data-theme="dark"] .wall::after{opacity:1}
+
+  /* ---------- 菜单栏 ---------- */
+  .menubar{
+    position:sticky;top:0;z-index:60;
+    margin:0 calc(clamp(14px,2.6vw,40px) * -1);
+    padding:0 clamp(14px,2.6vw,40px);
+    height:34px;display:flex;align-items:center;justify-content:space-between;gap:16px;
+    background:var(--menubar);
+    -webkit-backdrop-filter:blur(26px) saturate(1.8);
+    backdrop-filter:blur(26px) saturate(1.8);
+    border-bottom:1px solid var(--menubar-line);
+    color:var(--menubar-text);
+    font-size:12.5px;
+    transition:background .3s var(--ease),color .3s var(--ease);
+  }
+  .menubar__group{display:flex;align-items:center;gap:16px;min-width:0}
+  .brand{display:flex;align-items:center;gap:7px;font-weight:600;letter-spacing:.01em;white-space:nowrap}
+  .brand__mark{
+    width:16px;height:16px;border-radius:5px;display:grid;place-items:center;
+    background:linear-gradient(160deg,#fff,#c9d2e6);color:#1b2340;
+    font-size:9px;font-weight:800;letter-spacing:-.04em;
+  }
+  html[data-theme="dark"] .brand__mark{background:linear-gradient(160deg,#5b74f0,#8b6cf8);color:#fff}
+  .mi{opacity:.78;cursor:default;transition:opacity .15s;white-space:nowrap}
+  .mi:hover{opacity:1}
+  .menubar__right{display:flex;align-items:center;gap:12px;font-variant-numeric:tabular-nums}
+  .icon-btn{
+    width:26px;height:26px;border-radius:8px;border:0;background:transparent;
+    color:inherit;cursor:pointer;display:grid;place-items:center;
+    transition:background .16s var(--ease);
+  }
+  .icon-btn:hover{background:var(--hover)}
+  .icon-btn svg{display:block}
+
+  /* ---------- 主栅格：12 列，三行等高 ---------- */
+  .stage{
+    max-width:1400px;margin:0 auto;
+    padding-top:clamp(16px,2vw,26px);
+    display:grid;
+    grid-template-columns:repeat(12,minmax(0,1fr));
+    /* 高度跟随视口：大屏摊开、小屏收紧，保证首屏不压到 Dock */
+    height:calc(100vh - 162px);
+    min-height:640px;
+    grid-template-rows:minmax(168px,.9fr) minmax(228px,1.45fr) minmax(210px,1.1fr);
+    gap:14px;
+    grid-template-areas:
+      "ov ov ov ov ov ov ov ov we we we we"
+      "li li li li li li li li to to to to"
+      "ca ca ca ca no no no no no no no no";
+  }
+  #ov{grid-area:ov}#we{grid-area:we}#li{grid-area:li}
+  #to{grid-area:to}#ca{grid-area:ca}#no{grid-area:no}
+
+  .card{
+    position:relative;
+    min-width:0;height:100%;
+    background:var(--glass);
+    -webkit-backdrop-filter:blur(44px) saturate(1.7);
+    backdrop-filter:blur(44px) saturate(1.7);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:20px;
+    display:flex;flex-direction:column;
+    transition:background .3s var(--ease),border-color .3s var(--ease),box-shadow .3s var(--ease);
+  }
+  .card__head{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    margin-bottom:12px;flex:none;
+  }
+  .card__title{font-size:12.5px;font-weight:600;letter-spacing:.02em;color:var(--text-2)}
+  .card__act{
+    width:22px;height:22px;border:0;border-radius:50%;cursor:pointer;
+    background:var(--chip);color:var(--text-2);font-size:13px;line-height:1;
+    transition:background .16s var(--ease),color .16s var(--ease);
+  }
+  .card__act:hover{color:var(--text)}
+
+  /* ---------- 概览 ---------- */
+  .ov__top{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex:none}
+  .ov__greet{font-size:12.5px;color:var(--text-2);font-weight:500}
+  .ov__time{
+    font-size:56px;line-height:1;font-weight:250;letter-spacing:-.045em;
+    margin:8px 0 6px;font-variant-numeric:tabular-nums;
+  }
+  .ov__date{font-size:12px;color:var(--text-3)}
+  .ov__side{text-align:right;font-size:11.5px;color:var(--text-2);line-height:1.8}
+  .ov__side b{display:block;color:var(--text);font-size:17px;font-weight:500;letter-spacing:-.01em}
+
+  .search{
+    margin-top:auto;flex:none;
+    display:flex;align-items:center;gap:9px;height:42px;padding:0 8px 0 13px;
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+    border-radius:12px;
+    transition:border-color .18s var(--ease),box-shadow .18s var(--ease),background .3s var(--ease);
+  }
+  .search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .search svg{color:var(--text-3);flex:none}
+  .search input{
+    flex:1;min-width:0;border:0;outline:0;background:transparent;
+    font-family:inherit;font-size:13.5px;color:var(--text);
+  }
+  .search input::placeholder{color:var(--text-3)}
+  .engine{
+    border:0;background:var(--chip);color:var(--text-2);height:28px;padding:0 10px;
+    border-radius:7px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:600;
+    transition:background .16s var(--ease),color .16s var(--ease);
+  }
+  .engine:hover{color:var(--text)}
+  .kbd{font-size:10px;color:var(--text-3);border:1px solid var(--line);border-radius:5px;padding:2px 5px}
+
+  /* ---------- 天气 ---------- */
+  .we__main{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+  .we__temp{font-size:46px;font-weight:280;line-height:1;letter-spacing:-.04em}
+  .we__temp sup{font-size:16px;font-weight:400;vertical-align:top;color:var(--text-2)}
+  .we__sub{font-size:11.5px;color:var(--text-2);margin-top:6px}
+  .we__icon{color:#f0a92c;flex:none}
+  html[data-theme="dark"] .we__icon{color:#ffd479}
+  .we__meta{
+    margin-top:auto;padding-top:12px;border-top:1px solid var(--line);
+    display:flex;gap:12px;font-size:11px;color:var(--text-3);
+  }
+
+  /* ---------- 导航 ---------- */
+  .tabs{
+    display:flex;align-items:center;gap:3px;margin-bottom:6px;flex:none;
+    overflow-x:auto;scrollbar-width:none;
+  }
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{
+    border:0;background:transparent;color:var(--text-2);height:28px;padding:0 11px;
+    border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:500;
+    display:flex;align-items:center;gap:5px;white-space:nowrap;
+    transition:background .16s var(--ease),color .16s var(--ease),box-shadow .16s var(--ease);
+  }
+  .tab:hover{background:var(--hover);color:var(--text)}
+  .tab[aria-selected="true"]{
+    background:var(--glass-strong);color:var(--text);
+    box-shadow:0 1px 3px rgba(10,14,30,.10);
+  }
+  .tab__n{font-size:10px;color:var(--text-3);font-variant-numeric:tabular-nums}
+  .tab[aria-selected="true"] .tab__n{color:var(--text-2)}
+
+  .grid{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));
+    grid-auto-rows:min-content;align-content:center;
+    gap:2px;margin-top:6px;overflow:auto;flex:1;
+    scrollbar-width:thin;
+  }
+  .tile{
+    display:flex;flex-direction:column;align-items:center;gap:6px;
+    padding:11px 4px 9px;border-radius:12px;text-decoration:none;color:inherit;
+    transition:background .16s var(--ease),transform .16s var(--ease);
+  }
+  .tile:hover{background:var(--hover);transform:translateY(-1px)}
+  .tile__icon{
+    width:42px;height:42px;border-radius:12px;display:grid;place-items:center;
+    color:#fff;font-size:16px;font-weight:600;
+    box-shadow:0 6px 14px -8px rgba(10,14,30,.55), inset 0 .5px 0 rgba(255,255,255,.28);
+  }
+  .tile__name{font-size:11px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tile__host{font-size:9px;color:var(--text-3);margin-top:-3px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* ---------- 待办 ---------- */
+  .todo{display:flex;flex-direction:column;gap:1px;flex:1;min-height:0;overflow:auto}
+  .todo__item{
+    display:flex;align-items:flex-start;gap:9px;padding:5px 8px;margin:0 -8px;border-radius:9px;
+    cursor:pointer;transition:background .16s var(--ease);
+  }
+  .todo__item:hover{background:var(--hover)}
+  .todo__dot{
+    width:14px;height:14px;border-radius:50%;flex:none;margin-top:1px;
+    border:1.5px solid var(--text-3);display:grid;place-items:center;
+    transition:background .16s var(--ease),border-color .16s var(--ease);
+  }
+  .todo__dot svg{opacity:0;color:#fff}
+  .todo__item.is-done .todo__dot{background:var(--accent);border-color:var(--accent)}
+  .todo__item.is-done .todo__dot svg{opacity:1}
+  .todo__text{font-size:12px;line-height:1.5;flex:1;min-width:0}
+  .todo__item.is-done .todo__text{color:var(--text-3);text-decoration:line-through}
+  .todo__due{font-size:10px;color:var(--text-3);white-space:nowrap;padding-top:2px}
+  .todo__due.hot{color:var(--danger)}
+  .todo__foot{
+    flex:none;display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-3);
+    padding-top:9px;margin-top:6px;border-top:1px solid var(--line);
+  }
+
+  /* ---------- 日历 ---------- */
+  .cal__bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .cal__month{font-size:12.5px;font-weight:600}
+  .cal__nav{display:flex;gap:1px}
+  .cal__nav button{
+    width:20px;height:20px;border:0;border-radius:6px;background:transparent;color:var(--text-2);
+    cursor:pointer;font-size:12px;line-height:1;transition:background .16s var(--ease),color .16s var(--ease);
+  }
+  .cal__nav button:hover{background:var(--hover);color:var(--text)}
+  .cal__grid{display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:1fr;gap:1px;flex:1;min-height:0}
+  .cal__wd{text-align:center;font-size:9px;color:var(--text-3);font-weight:600;padding-bottom:3px}
+  .cal__d{
+    display:grid;place-items:center;border-radius:8px;
+    font-size:10.5px;color:var(--text-2);font-variant-numeric:tabular-nums;
+    transition:background .14s var(--ease);
+  }
+  .cal__d:hover{background:var(--hover)}
+  .cal__d.wk{color:#c96b6b}
+  html[data-theme="dark"] .cal__d.wk{color:#f09295}
+  .cal__d.out{color:var(--text-3);opacity:.45}
+  .cal__d.today{background:var(--accent);color:#fff;font-weight:600;border-radius:8px}
+  html[data-theme="dark"] .cal__d.today{color:#04182b}
+  .cal__foot{
+    flex:none;display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;
+    border-top:1px solid var(--line);font-size:10px;color:var(--text-3);
+  }
+  .cal__foot b{color:var(--text);font-weight:600}
+
+  /* ---------- 便笺 ---------- */
+  #no{background:var(--note-bg);border-color:var(--line)}
+  #no .card__title{color:var(--note-text);opacity:.7}
+  .note__body{
+    flex:1;outline:0;font-size:12.5px;line-height:1.85;color:var(--note-text);
+    white-space:pre-wrap;
+  }
+  .note__body:empty::before{content:attr(data-ph);opacity:.45}
+  .note__meta{
+    flex:none;font-size:9.5px;color:var(--note-text);opacity:.5;
+    padding-top:8px;border-top:1px solid rgba(0,0,0,.06);
+  }
+  html[data-theme="dark"] .note__meta{border-top-color:rgba(255,255,255,.12)}
+
+  /* ---------- Dock ---------- */
+  .dock{
+    position:relative;z-index:70;
+    width:fit-content;margin:18px auto 0;
+    display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:22px;
+    background:var(--dock);
+    -webkit-backdrop-filter:blur(36px) saturate(1.8);
+    backdrop-filter:blur(36px) saturate(1.8);
+    border:1px solid var(--dock-line);
+    box-shadow:0 18px 44px -22px rgba(10,14,30,.8);
+    transition:background .3s var(--ease);
+  }
+  .dock__sep{width:1px;height:28px;background:var(--dock-line)}
+  .dock__item{
+    position:relative;width:44px;height:44px;border-radius:13px;
+    display:grid;place-items:center;color:#fff;font-size:15px;font-weight:600;
+    box-shadow:0 6px 16px -9px rgba(3,7,20,.9), inset 0 .5px 0 rgba(255,255,255,.4);
+    transition:transform .2s var(--ease),filter .2s var(--ease);
+    cursor:pointer;
+  }
+  .dock__item:hover{transform:translateY(-8px) scale(1.08)}
+  .dock__item::after{
+    content:attr(data-label);position:absolute;bottom:calc(100% + 10px);left:50%;
+    transform:translateX(-50%) scale(.94);padding:4px 9px;border-radius:7px;white-space:nowrap;
+    background:rgba(20,22,38,.86);color:#fff;font-size:10.5px;opacity:0;pointer-events:none;
+    transition:opacity .15s var(--ease),transform .15s var(--ease);
+  }
+  .dock__item:hover::after{opacity:1;transform:translateX(-50%) scale(1)}
+  .d-finder{background:linear-gradient(160deg,#4ea7ff,#1160d8)}
+  .d-safari{background:linear-gradient(160deg,#5fd0ff,#0a6ee0)}
+  .d-mail{background:linear-gradient(160deg,#5ec9ff,#1573f0)}
+  .d-cal{background:linear-gradient(160deg,#fff,#e6e8ef);color:#e0453f;flex-direction:column;gap:0;font-size:8px}
+  .d-note{background:linear-gradient(160deg,#fff6c9,#f3d46a);color:#8a6a12}
+  .d-code{background:linear-gradient(160deg,#38bdf8,#2563eb);font-size:12px}
+  .d-term{background:linear-gradient(160deg,#3d4658,#171c26);font-family:ui-monospace,Menlo,monospace;font-size:13px}
+
+  /* ---------- 响应式 ---------- */
+  @media (max-width:1120px){
+    .stage{
+      grid-template-columns:repeat(6,minmax(0,1fr));
+      grid-template-rows:auto;
+      height:auto;
+      min-height:0;
+      grid-template-areas:
+        "ov ov ov ov ov ov"
+        "we we we to to to"
+        "li li li li li li"
+        "ca ca ca no no no";
+    }
+    .card{height:auto}
+    #ov,#we,#li,#to,#ca{min-height:180px}
+    #li{min-height:320px}
+  }
+  @media (max-width:760px){
+    .stage{
+      grid-template-columns:minmax(0,1fr);
+      grid-template-areas:"ov" "we" "li" "to" "ca" "no";
+    }
+    .menubar__group .mi{display:none}
+    .ov__time{font-size:46px}
+    .card{padding:16px}
+    .dock{gap:6px;padding:7px 9px}
+    .dock__item{width:38px;height:38px;border-radius:11px;font-size:13px}
+    .dock__item--hide{display:none}
+    body{padding-bottom:88px}
+  }
+</style>
+</head>
+<body>
+<div class="wall"></div>
+
+<header class="menubar">
+  <div class="menubar__group">
+    <span class="brand"><span class="brand__mark">en</span>edge-nav</span>
+    <span class="mi">文件</span>
+    <span class="mi">编辑</span>
+    <span class="mi">显示</span>
+    <span class="mi">窗口</span>
+    <span class="mi">帮助</span>
+  </div>
+  <div class="menubar__right">
+    <span id="barWeather">24° 晴</span>
+    <svg width="14" height="11" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity=".8"><path d="M1.4 4.2a9.4 9.4 0 0 1 13.2 0"/><path d="M3.9 6.7a6 6 0 0 1 8.2 0"/><path d="M6.4 9.2a2.5 2.5 0 0 1 3.2 0"/><circle cx="8" cy="10.8" r=".9" fill="currentColor" stroke="none"/></svg>
+    <svg width="24" height="11" viewBox="0 0 26 12" fill="none" opacity=".8"><rect x=".6" y=".6" width="21" height="10.8" rx="3" stroke="currentColor" opacity=".5"/><rect x="2.6" y="2.6" width="14.5" height="6.8" rx="1.6" fill="currentColor"/></svg>
+    <button class="icon-btn" id="themeBtn" title="切换深色 / 浅色">
+      <svg id="themeIcon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6"/></svg>
+    </button>
+    <span id="barClock">10月31日 周六 19:42</span>
+  </div>
+</header>
+
+<main class="stage">
+  <!-- 概览 -->
+  <section class="card" id="ov">
+    <div class="ov__top">
+      <div>
+        <p class="ov__greet" id="greet">晚上好</p>
+        <div class="ov__time" id="clock">19:42</div>
+        <p class="ov__date" id="dateText">10 月 31 日 · 星期六</p>
+      </div>
+      <div class="ov__side">
+        <b>武汉</b>
+        24° 晴间多云<br>体感 25° · 湿度 61%
+      </div>
+    </div>
+    <form class="search" id="searchForm">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="7.2" cy="7.2" r="4.6"/><path d="M10.7 10.7 14 14"/></svg>
+      <input id="q" type="text" placeholder="搜索，或输入网址" autocomplete="off" spellcheck="false">
+      <button type="button" class="engine" id="engineBtn">Bing</button>
+      <span class="kbd">⌘K</span>
+    </form>
+  </section>
+
+  <!-- 天气 -->
+  <section class="card" id="we">
+    <div class="we__main">
+      <div>
+        <div class="we__temp">24<sup>°C</sup></div>
+        <div class="we__sub">晴间多云 · 东南风 2 级</div>
+      </div>
+      <svg class="we__icon" width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+        <circle cx="12" cy="10.5" r="3.6"/>
+        <path d="M12 3v1.8M12 16.4v1.6M4.2 10.5h1.8M18 10.5h1.8M6.3 4.8l1.3 1.3M16.1 14.6l1.3 1.3M17.4 4.8l-1.3 1.3M7.6 14.6l-1.3 1.3"/>
+        <path d="M8.2 20.6h7.4" stroke="currentColor" opacity=".5"/>
+      </svg>
+    </div>
+    <div class="we__meta"><span>体感 25°</span><span>湿度 61%</span><span>紫外线 弱</span></div>
+  </section>
+
+  <!-- 导航 -->
+  <section class="card" id="li">
+    <div class="card__head">
+      <span class="card__title">书签</span>
+      <span style="font-size:10.5px;color:var(--text-3)" id="tabHint">常用 · 8 个站点</span>
+    </div>
+    <nav class="tabs" id="tabs" role="tablist"></nav>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <!-- 待办 -->
+  <section class="card" id="to">
+    <div class="card__head">
+      <span class="card__title">提醒事项</span>
+      <button class="card__act" title="新增">＋</button>
+    </div>
+    <div class="todo" id="todo">
+      <div class="todo__item">
+        <span class="todo__dot"><svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M1.6 5.4 4 7.8 8.4 2.4"/></svg></span>
+        <span class="todo__text">定下导航的视觉方向</span>
+        <span class="todo__due hot">今天</span>
+      </div>
+      <div class="todo__item">
+        <span class="todo__dot"><svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M1.6 5.4 4 7.8 8.4 2.4"/></svg></span>
+        <span class="todo__text">把主题给同事试用</span>
+        <span class="todo__due">11-02</span>
+      </div>
+      <div class="todo__item">
+        <span class="todo__dot"><svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M1.6 5.4 4 7.8 8.4 2.4"/></svg></span>
+        <span class="todo__text">补齐深色下的对比度</span>
+        <span class="todo__due">11-05</span>
+      </div>
+      <div class="todo__item is-done">
+        <span class="todo__dot"><svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M1.6 5.4 4 7.8 8.4 2.4"/></svg></span>
+        <span class="todo__text">整理书签文件夹层级</span>
+        <span class="todo__due">10-29</span>
+      </div>
+    </div>
+    <div class="todo__foot"><span>4 项 · 已完成 1</span><span>今日 1 项</span></div>
+  </section>
+
+  <!-- 日历 -->
+  <section class="card" id="ca">
+    <div class="cal__bar">
+      <span class="cal__month" id="calTitle">2026 年 10 月</span>
+      <div class="cal__nav">
+        <button data-cal="-1" aria-label="上个月">‹</button>
+        <button data-cal="1" aria-label="下个月">›</button>
+      </div>
+    </div>
+    <div class="cal__grid" id="calGrid"></div>
+    <div class="cal__foot"><span>工作日 <b>18</b> 天</span><span>国庆 · 补班 1 天</span></div>
+  </section>
+
+  <!-- 便笺 -->
+  <section class="card" id="no">
+    <div class="card__head">
+      <span class="card__title">便笺</span>
+      <span style="font-size:9.5px;color:var(--note-text);opacity:.5">自动保存</span>
+    </div>
+    <div class="note__body" contenteditable="true" spellcheck="false" data-ph="随手记点什么…">深色不是把白底变黑底：
+先降背景亮度，再让卡片比背景亮一档，文字对比度守住 4.5:1。
+留白比装饰更贵——先减掉一条分隔线，再加一个颜色。</div>
+    <div class="note__meta">更新于 19:36</div>
+  </section>
+</main>
+
+<nav class="dock">
+  <span class="dock__item d-finder" data-label="访达">访</span>
+  <span class="dock__item d-safari" data-label="Safari">S</span>
+  <span class="dock__item d-mail dock__item--hide" data-label="邮件">信</span>
+  <span class="dock__item d-cal" data-label="日历"><span style="font-size:6px;letter-spacing:.06em">OCT</span><b id="dockDay" style="font-size:14px">31</b></span>
+  <span class="dock__item d-note" data-label="备忘录">记</span>
+  <span class="dock__item d-code" data-label="VS Code">&lt;/&gt;</span>
+  <span class="dock__sep"></span>
+  <span class="dock__item d-term" data-label="终端">›_</span>
+</nav>
+
+<script>
+  const TABS = [
+    { id:'common', name:'常用', items:[
+      { name:'GitHub', host:'github.com', badge:'G', bg:'#24292f', url:'https://github.com' },
+      { name:'掘金', host:'juejin.cn', badge:'掘', bg:'#1e80ff', url:'https://juejin.cn' },
+      { name:'哔哩哔哩', host:'bilibili.com', badge:'B', bg:'#fb7299', url:'https://www.bilibili.com' },
+      { name:'知乎', host:'zhihu.com', badge:'知', bg:'#1772f6', url:'https://www.zhihu.com' },
+      { name:'腾讯文档', host:'docs.qq.com', badge:'文', bg:'#2d7ff9', url:'https://docs.qq.com' },
+      { name:'高德地图', host:'amap.com', badge:'高', bg:'#0a84ff', url:'https://ditu.amap.com' },
+      { name:'飞书', host:'feishu.cn', badge:'飞', bg:'#3370ff', url:'https://www.feishu.cn' },
+      { name:'微信读书', host:'weread.qq.com', badge:'读', bg:'#1aad19', url:'https://weread.qq.com' }
+    ]},
+    { id:'dev', name:'开发', items:[
+      { name:'MDN', host:'developer.mozilla.org', badge:'M', bg:'#16181d', url:'https://developer.mozilla.org' },
+      { name:'Vue', host:'cn.vuejs.org', badge:'V', bg:'#41b883', url:'https://cn.vuejs.org' },
+      { name:'Stack Overflow', host:'stackoverflow.com', badge:'S', bg:'#f48024', url:'https://stackoverflow.com' },
+      { name:'npm', host:'npmjs.com', badge:'n', bg:'#cb3837', url:'https://www.npmjs.com' },
+      { name:'Vite', host:'cn.vitejs.dev', badge:'⚡', bg:'#646cff', url:'https://cn.vitejs.dev' },
+      { name:'Can I use', host:'caniuse.com', badge:'C', bg:'#1f7a4d', url:'https://caniuse.com' },
+      { name:'阮一峰', host:'ruanyifeng.com', badge:'阮', bg:'#3b4252', url:'https://www.ruanyifeng.com/blog/' },
+      { name:'CodePen', host:'codepen.io', badge:'P', bg:'#0e1116', url:'https://codepen.io' }
+    ]},
+    { id:'design', name:'设计', items:[
+      { name:'Figma', host:'figma.com', badge:'F', bg:'#a259ff', url:'https://www.figma.com' },
+      { name:'Dribbble', host:'dribbble.com', badge:'D', bg:'#ea4c89', url:'https://dribbble.com' },
+      { name:'Behance', host:'behance.net', badge:'Bē', bg:'#1769ff', url:'https://www.behance.net' },
+      { name:'Unsplash', host:'unsplash.com', badge:'U', bg:'#111111', url:'https://unsplash.com' },
+      { name:'iconfont', host:'iconfont.cn', badge:'I', bg:'#ff6a00', url:'https://www.iconfont.cn' },
+      { name:'Coolors', host:'coolors.co', badge:'C', bg:'#0d6efd', url:'https://coolors.co' }
+    ]},
+    { id:'read', name:'阅读', items:[
+      { name:'少数派', host:'sspai.com', badge:'少', bg:'#d33a31', url:'https://sspai.com' },
+      { name:'即刻', host:'okjike.com', badge:'即', bg:'#ffe411', fg:'#111', url:'https://web.okjike.com' },
+      { name:'Hacker News', host:'news.ycombinator.com', badge:'Y', bg:'#ff6600', url:'https://news.ycombinator.com' },
+      { name:'V2EX', host:'v2ex.com', badge:'V2', bg:'#333333', url:'https://www.v2ex.com' },
+      { name:'豆瓣', host:'douban.com', badge:'豆', bg:'#2e963d', url:'https://www.douban.com' },
+      { name:'Product Hunt', host:'producthunt.com', badge:'P', bg:'#da552f', url:'https://www.producthunt.com' }
+    ]}
+  ];
+
+  const grid = document.getElementById('grid');
+  const tabsEl = document.getElementById('tabs');
+  let active = 'common';
+
+  function renderTabs(){
+    tabsEl.innerHTML = TABS.map(t => `
+      <button class="tab" role="tab" data-id="${t.id}" aria-selected="${t.id === active}">
+        ${t.name}<span class="tab__n">${t.items.length}</span>
+      </button>`).join('');
+  }
+  function renderGrid(){
+    const tab = TABS.find(t => t.id === active) || TABS[0];
+    document.getElementById('tabHint').textContent = `${tab.name} · ${tab.items.length} 个站点`;
+    grid.innerHTML = tab.items.map(it => `
+      <a class="tile" href="${it.url}" target="_blank" rel="noopener noreferrer">
+        <span class="tile__icon" style="background:${it.bg};color:${it.fg || '#fff'}">${it.badge}</span>
+        <span class="tile__name">${it.name}</span>
+        <span class="tile__host">${it.host}</span>
+      </a>`).join('');
+  }
+  tabsEl.addEventListener('click', e => {
+    const btn = e.target.closest('.tab');
+    if (!btn) return;
+    active = btn.dataset.id;
+    renderTabs(); renderGrid();
+  });
+
+  /* 搜索 */
+  const ENGINES = [
+    { name:'Bing', url:'https://www.bing.com/search?q=' },
+    { name:'Google', url:'https://www.google.com/search?q=' },
+    { name:'百度', url:'https://www.baidu.com/s?wd=' }
+  ];
+  let engine = 0;
+  const engineBtn = document.getElementById('engineBtn');
+  engineBtn.addEventListener('click', () => {
+    engine = (engine + 1) % ENGINES.length;
+    engineBtn.textContent = ENGINES[engine].name;
+  });
+  document.getElementById('searchForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const value = document.getElementById('q').value.trim();
+    if (!value) return;
+    const isUrl = /^https?:\/\//i.test(value) || /^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(value);
+    window.open(isUrl ? (/^https?:\/\//i.test(value) ? value : 'https://' + value)
+                     : ENGINES[engine].url + encodeURIComponent(value), '_blank', 'noopener');
+  });
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault(); document.getElementById('q').focus();
+    }
+  });
+
+  /* 主题 */
+  const root = document.documentElement;
+  const SUN = '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6"/>';
+  const MOON = '<path d="M20 14.4A8.5 8.5 0 0 1 9.6 4a8.5 8.5 0 1 0 10.4 10.4z"/>';
+  function applyTheme(mode){
+    root.dataset.theme = mode;
+    root.style.colorScheme = mode;
+    document.getElementById('themeIcon').innerHTML = mode === 'dark' ? SUN : MOON;
+    localStorage.setItem('edge-nav:theme', mode);
+  }
+  const saved = localStorage.getItem('edge-nav:theme');
+  const sysDark = window.matchMedia('(prefers-color-scheme: dark)');
+  // 支持 ?theme=dark / ?theme=light 直接以指定主题打开（方便截图与分享）
+  const param = new URLSearchParams(location.search).get('theme');
+  applyTheme(param === 'dark' || param === 'light' ? param
+    : saved === 'dark' || saved === 'light' ? saved
+    : (sysDark.matches ? 'dark' : 'light'));
+  document.getElementById('themeBtn').addEventListener('click', () => {
+    applyTheme(root.dataset.theme === 'dark' ? 'light' : 'dark');
+  });
+  sysDark.addEventListener('change', e => {
+    if (!localStorage.getItem('edge-nav:theme')) applyTheme(e.matches ? 'dark' : 'light');
+  });
+
+  /* 时钟 */
+  const pad = n => String(n).padStart(2, '0');
+  const WD = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+  function tick(){
+    const d = new Date();
+    const h = d.getHours();
+    document.getElementById('greet').textContent =
+      h < 5 ? '夜深了，注意休息' : h < 9 ? '早上好' : h < 12 ? '上午好'
+      : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好';
+    document.getElementById('clock').textContent = `${pad(h)}:${pad(d.getMinutes())}`;
+    document.getElementById('dateText').textContent =
+      `${d.getMonth() + 1} 月 ${d.getDate()} 日 · ${WD[d.getDay()]}`;
+    document.getElementById('barClock').textContent =
+      `${d.getMonth() + 1}月${d.getDate()}日 周${'日一二三四五六'[d.getDay()]} ${pad(h)}:${pad(d.getMinutes())}`;
+  }
+  tick(); setInterval(tick, 1000);
+  document.getElementById('dockDay').textContent = new Date().getDate();
+
+  /* 日历 */
+  let calRef = new Date();
+  function renderCal(){
+    const y = calRef.getFullYear(), m = calRef.getMonth();
+    const first = new Date(y, m, 1).getDay();
+    const days = new Date(y, m + 1, 0).getDate();
+    const prevDays = new Date(y, m, 0).getDate();
+    const today = new Date();
+    const isThisMonth = today.getFullYear() === y && today.getMonth() === m;
+    document.getElementById('calTitle').textContent = `${y} 年 ${m + 1} 月`;
+    let html = ['日','一','二','三','四','五','六']
+      .map(w => `<span class="cal__wd">${w}</span>`).join('');
+    for (let i = first - 1; i >= 0; i--) html += `<span class="cal__d out">${prevDays - i}</span>`;
+    for (let d = 1; d <= days; d++) {
+      const wd = (first + d - 1) % 7;
+      const cls = ['cal__d'];
+      if (wd === 0 || wd === 6) cls.push('wk');
+      if (isThisMonth && d === today.getDate()) cls.push('today');
+      html += `<span class="${cls.join(' ')}">${d}</span>`;
+    }
+    const rest = (7 - ((first + days) % 7)) % 7;
+    for (let d = 1; d <= rest; d++) html += `<span class="cal__d out">${d}</span>`;
+    document.getElementById('calGrid').innerHTML = html;
+  }
+  renderCal();
+  document.querySelectorAll('[data-cal]').forEach(btn => btn.addEventListener('click', () => {
+    calRef.setMonth(calRef.getMonth() + Number(btn.dataset.cal));
+    renderCal();
+  }));
+
+  document.getElementById('todo').addEventListener('click', e => {
+    const item = e.target.closest('.todo__item');
+    if (item) item.classList.toggle('is-done');
+  });
+
+  renderTabs(); renderGrid();
+</script>
+</body>
+</html>
