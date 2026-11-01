@@ -448,7 +448,7 @@ function onDragEnd(): void {
         <a
           class="link__anchor"
           :href="row.url"
-          target="_blank"
+          :target="config.search.openInNewTab ? '_blank' : '_self'"
           rel="noopener noreferrer"
           :title="`${row.title}\n${row.url}`"
           @click="onOpen"

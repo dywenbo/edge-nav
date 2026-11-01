@@ -23,7 +23,11 @@ interface ChromeBookmarkNode {
 
 interface ChromeNamespace {
   storage?: { local?: ChromeStorageArea }
-  runtime?: { id?: string; getURL?(path: string): string }
+  runtime?: {
+    id?: string
+    getURL?(path: string): string
+    getManifest?(): { version: string }
+  }
   bookmarks?: {
     getTree(): Promise<ChromeBookmarkNode[]>
     create(details: {

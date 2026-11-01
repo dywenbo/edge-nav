@@ -47,8 +47,33 @@ export interface TodoItem {
   priority: Priority
   /** YYYY-MM-DD，空字符串表示不设截止日 */
   due: string
+  /** 绑定一个网址：点「开始」直接打开，专注计时也能带上它 */
+  url?: string
   subtasks: SubTask[]
   createdAt: number
+}
+
+/**
+ * 专注计时（番茄钟）的持久化状态。
+ * 只存「结束时间戳」而不是每秒倒计时，关掉标签页再打开也能接上；
+ * 秒级刷新完全由组件本地完成，不写盘。
+ */
+export interface FocusState {
+  /** 单轮时长（分钟） */
+  minutes: number
+  /** 运行中：结束时间戳；未运行为 0 */
+  endsAt: number
+  /** 暂停 / 重置后的剩余秒数；0 表示一整轮还没开始 */
+  remaining: number
+  running: boolean
+  /** 关联的待办 id，空字符串表示自由专注 */
+  todoId: string
+  /** 今日完成的轮数 */
+  completed: number
+  /** completed 对应的日期 YYYY-MM-DD */
+  day: string
+  /** 最近一次完成的时间戳，用于让卡片弹一次「本轮完成」提示 */
+  lastDoneAt: number
 }
 
 export interface NoteItem {
@@ -73,6 +98,13 @@ export interface WidgetItem {
   groupId?: string
 }
 
+export interface LayoutConfig {
+  /** 拖动时吸附到其它卡片与画布边缘，并显示参考线 */
+  snapToEdges: boolean
+  /** 松手后把其它卡片上移，填掉被拖走 / 删掉的空位 */
+  autoCompact: boolean
+}
+
 export interface WallpaperConfig {
   type: 'gradient' | 'image'
   gradient: string
@@ -87,8 +119,11 @@ export interface AppConfig {
   theme: ThemeMode
   style: UIStyle
   wallpaper: WallpaperConfig
+  layout: LayoutConfig
   search: {
     engine: string
+    /** 搜索结果与命令面板里的网址是否新开标签页 */
+    openInNewTab: boolean
   }
   weather: {
     city: string
@@ -111,5 +146,6 @@ export interface AppConfig {
     /** 手动标注的日期，键为 YYYY-MM-DD，优先级最高 */
     overrides: Record<string, DayMark>
   }
+  focus: FocusState
   widgets: WidgetItem[]
 }

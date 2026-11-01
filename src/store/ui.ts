@@ -7,6 +7,12 @@ export const editMode = ref(false)
 /** 设置抽屉 */
 export const settingsOpen = ref(false)
 
+/** 命令面板（Ctrl/Cmd + K） */
+export const paletteOpen = ref(false)
+
+/** 首次安装 / 手动唤起的操作指引 */
+export const guideOpen = ref(false)
+
 /** 画布实际可用宽度，由 CanvasBoard 用 ResizeObserver 测量后写入 */
 export const canvasWidth = ref(CANVAS_W)
 

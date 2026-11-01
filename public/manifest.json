@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "edge-nav · 自定义新标签页",
   "short_name": "edge-nav",
-  "version": "0.5.0",
-  "description": "可自由拖拽布局的新标签页：搜索、书签文件夹导航、深浅主题、时钟天气、待办、工作日历、记事本。",
+  "version": "0.7.0",
+  "description": "可自由拖拽布局的新标签页：磁吸对齐与自动去留白、搜索、书签文件夹导航、命令面板、专注计时、待办、工作日历、记事本。",
   "minimum_chrome_version": "110",
   "chrome_url_overrides": {
     "newtab": "index.html"

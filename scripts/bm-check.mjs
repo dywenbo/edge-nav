@@ -99,6 +99,12 @@ async function evaluate(expression) {
 
 await send('Page.enable')
 await send('Runtime.enable')
+await send('Emulation.setDeviceMetricsOverride', {
+  width: 1440,
+  height: 900,
+  deviceScaleFactor: 1,
+  mobile: false,
+})
 await send('Page.addScriptToEvaluateOnNewDocument', { source: FAKE })
 
 await send('Page.navigate', { url: URL_APP })
@@ -108,6 +114,10 @@ await sleep(2600)
 await evaluate(`localStorage.clear()`)
 await send('Page.reload')
 await sleep(2600)
+
+// 首次安装会弹全屏操作指引，先关掉再点标签页
+await evaluate(`document.querySelector('.guide__foot .guide__btn:last-child')?.click()`)
+await sleep(300)
 
 const out = {}
 const readCfg = () => evaluate(`JSON.parse(localStorage.getItem('edge-nav:config') || '{}')`)
@@ -127,7 +137,7 @@ out.activeFolderTiles = await evaluate(
 
 /* 3. 设置面板里能勾选哪些文件夹 */
 out.folderConfig = await evaluate(`(async () => {
-  document.querySelectorAll('.dock__btn')[1].click()
+  document.querySelectorAll('.dock__item')[1].click()
   await new Promise(r => setTimeout(r, 400))
   const heads = [...document.querySelectorAll('.group h3')].map(h => h.textContent.trim())
   const bmGroup = [...document.querySelectorAll('.group')].find(g => g.querySelector('h3')?.textContent.includes('书签文件夹'))
@@ -171,7 +181,7 @@ out.hideLink = await evaluate(`(async () => {
   const before = [...document.querySelectorAll('.link__title')].map(e => e.textContent.trim())
 
   // 进编辑模式，点第一条的 ✕
-  document.querySelectorAll('.dock__btn')[2].click()
+  document.querySelectorAll('.dock__item')[2].click()
   await new Promise(r => setTimeout(r, 300))
   const firstOps = document.querySelector('.link .link__ops')
   const delBtn = [...firstOps.querySelectorAll('button')].pop()

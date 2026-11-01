@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { config } from '@/store/config'
+import { paletteOpen } from '@/store/ui'
 import { ENGINES, getEngine } from '@/data/engines'
 import { normalizeUrl } from '@/utils/favicon'
+import { openUrl } from '@/utils/openUrl'
 import Icon from './Icon.vue'
 
 const keyword = ref('')
@@ -16,8 +18,8 @@ function submit(): void {
   if (!text) return
   const direct = normalizeUrl(text)
   const target = direct ?? `${engine.value.url}${encodeURIComponent(text)}`
-  // 一律在新标签页打开，保留当前这块新标签页，方便连续搜索
-  window.open(target, '_blank', 'noopener,noreferrer')
+  // 默认新标签页打开（方便连续搜索），可在设置里改成原地跳转
+  openUrl(target, config.search.openInNewTab)
   keyword.value = ''
   inputRef.value?.focus()
 }
@@ -79,6 +81,13 @@ onMounted(() => inputRef.value?.focus())
     />
 
     <span class="search__hint">Enter</span>
+
+    <button
+      type="button"
+      class="search__hint search__hint--btn"
+      title="打开命令面板：搜索链接、书签、待办、笔记（Ctrl K）"
+      @click="paletteOpen = true"
+    >Ctrl K</button>
 
     <button class="search__submit" type="submit" title="搜索">
       <Icon name="search" :size="16" />
@@ -219,6 +228,27 @@ onMounted(() => inputRef.value?.focus())
 
 .search__hint::after {
   content: '';
+}
+
+.search__hint--btn {
+  border: 1px solid var(--line);
+  background: var(--surface-hover);
+  color: var(--text-3);
+  font-family: inherit;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.search__hint--btn:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+/* 窄屏优先保住输入区，命令面板仍可用 Ctrl K 唤起 */
+@media (max-width: 560px) {
+  .search__hint--btn {
+    display: none;
+  }
 }
 
 .search__submit {

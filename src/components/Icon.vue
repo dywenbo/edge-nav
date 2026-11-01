@@ -50,6 +50,15 @@ const PATHS: Record<string, string> = {
   eyeOff:
     '<path d="M4 4l16 16"/><path d="M9.9 5.2A9.6 9.6 0 0 1 12 5c5 0 9 4.5 9 7a9.7 9.7 0 0 1-2.4 3.7"/><path d="M6.1 7.2A10.7 10.7 0 0 0 3 12c0 2.5 4 7 9 7a9.5 9.5 0 0 0 3.9-.85"/>',
   link: '<path d="M10.6 13.4a3.5 3.5 0 0 0 5 0l2.5-2.5a3.5 3.5 0 0 0-5-5l-1.3 1.3"/><path d="M13.4 10.6a3.5 3.5 0 0 0-5 0L5.9 13.1a3.5 3.5 0 0 0 5 5l1.3-1.3"/>',
+  play: '<path d="M8.5 5.6l9.5 6.4-9.5 6.4z"/>',
+  pause: '<path d="M9 5.5v13M15 5.5v13"/>',
+  stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="2.4"/>',
+  external:
+    '<path d="M14 4.5h5.5V10"/><path d="M19.5 4.5L11 13"/><path d="M9.5 6.5H6A1.5 1.5 0 0 0 4.5 8v10A1.5 1.5 0 0 0 6 19.5h10a1.5 1.5 0 0 0 1.5-1.5v-3.5"/>',
+  history:
+    '<path d="M3.6 12a8.4 8.4 0 1 0 2.6-6.1"/><path d="M3.6 4.6v4.2h4.2"/><path d="M12 8.2v4.3l3 1.8"/>',
+  command:
+    '<path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/>',
 }
 
 const svg = computed(() => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${props.stroke}" stroke-linecap="round" stroke-linejoin="round">${PATHS[props.name] ?? PATHS.cloud}</svg>`)

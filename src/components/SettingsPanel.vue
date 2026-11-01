@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { settingsOpen } from '@/store/ui'
+import { computed, onMounted, ref, watch } from 'vue'
+import { guideOpen, settingsOpen } from '@/store/ui'
 import {
   config,
   addGroup,
   addWidget,
   appendLinks,
+  compactLayout,
   exportConfig,
   importConfig,
   removeGroup,
@@ -14,6 +15,15 @@ import {
   restoreHiddenBookmarks,
   widgetLabel,
 } from '@/store/config'
+import {
+  createSnapshot,
+  formatSnapshotTime,
+  refreshSnapshots,
+  removeSnapshot,
+  restoreSnapshot,
+  snapshotState,
+} from '@/store/snapshots'
+import { countContents, parseConfigPayload, type ParsedConfig } from '@/utils/configTransfer'
 import { bookmarkState, loadBookmarks } from '@/store/bookmarks'
 import {
   holidayState,
@@ -36,6 +46,33 @@ const uploadError = ref('')
 const cityDraft = ref(config.weather.city)
 const cityStatus = ref<'idle' | 'loading' | 'ok' | 'empty' | 'error'>('idle')
 const status = ref<{ type: 'ok' | 'error'; text: string } | null>(null)
+
+/** 待确认的导入：先摆出「文件里有什么 / 现在有什么」，再让用户选覆盖还是合并 */
+const pendingImport = ref<ParsedConfig | null>(null)
+const pendingImportText = ref('')
+const pendingImportName = ref('')
+
+const currentCounts = computed(() => countContents(config))
+
+const appVersion = computed(() => {
+  try {
+    if (typeof chrome !== 'undefined' && chrome?.runtime?.getManifest) {
+      return chrome.runtime.getManifest().version
+    }
+  } catch {
+    /* 网页预览下没有 runtime，回落到固定文案 */
+  }
+  return '0.6.0'
+})
+
+watch(settingsOpen, (open) => {
+  if (open) void refreshSnapshots()
+})
+
+// 组件是首次打开设置时才挂载的，此时 settingsOpen 已经是 true，watch 不会触发
+onMounted(() => {
+  if (settingsOpen.value) void refreshSnapshots()
+})
 
 const WIDGET_TYPES: WidgetType[] = ['overview', 'links', 'todo', 'calendar', 'notes']
 
@@ -145,6 +182,11 @@ function tidyLayout(): void {
   flash('ok', '已按顺序重新排列所有卡片')
 }
 
+function onCompact(): void {
+  const changed = compactLayout()
+  flash('ok', changed ? '已把卡片往上收，去掉多余留白' : '现在没有可去掉的留白了')
+}
+
 /* ---------------- 数据 ---------------- */
 
 function onExport(): void {
@@ -163,13 +205,59 @@ async function onImportChange(event: Event): Promise<void> {
   if (!file) return
   try {
     const text = await file.text()
-    const result = importConfig(text)
-    flash(result.ok ? 'ok' : 'error', result.message)
+    const parsed = parseConfigPayload(text)
+    if (!parsed.ok) {
+      flash('error', parsed.message)
+      return
+    }
+    pendingImport.value = parsed.data
+    pendingImportText.value = text
+    pendingImportName.value = file.name
   } catch {
     flash('error', '读取文件失败')
   } finally {
     input.value = ''
   }
+}
+
+function cancelImport(): void {
+  pendingImport.value = null
+  pendingImportText.value = ''
+  pendingImportName.value = ''
+}
+
+async function onApplyImport(mode: 'replace' | 'merge'): Promise<void> {
+  if (!pendingImportText.value) return
+  const result = await importConfig(pendingImportText.value, mode)
+  flash(result.ok ? 'ok' : 'error', result.message)
+  cancelImport()
+  cityDraft.value = config.weather.city
+  await refreshSnapshots()
+}
+
+/* ---------------- 备份与快照 ---------------- */
+
+async function onCreateSnapshot(): Promise<void> {
+  flash('ok', await createSnapshot('手动快照'))
+  await refreshSnapshots()
+}
+
+async function onRestoreSnapshot(id: string): Promise<void> {
+  const ok = window.confirm('恢复这份快照会覆盖当前的链接、待办、笔记与布局，确定继续？')
+  if (!ok) return
+  const result = await restoreSnapshot(id)
+  flash(result.ok ? 'ok' : 'error', result.message)
+  cityDraft.value = config.weather.city
+}
+
+async function onDeleteSnapshot(id: string): Promise<void> {
+  await removeSnapshot(id)
+  flash('ok', '已删除这份快照')
+}
+
+function onOpenGuide(): void {
+  settingsOpen.value = false
+  guideOpen.value = true
 }
 
 async function onImportBookmarks(): Promise<void> {
@@ -195,11 +283,12 @@ async function onImportBookmarks(): Promise<void> {
   }
 }
 
-function onReset(): void {
-  if (!window.confirm('确定恢复默认设置？本地快捷链接、待办和布局都会被清除。')) return
-  resetConfig()
+async function onReset(): Promise<void> {
+  if (!window.confirm('确定恢复默认设置？本地快捷链接、待办和布局都会被清除。\n（恢复前会自动留一份快照，可随时回滚）')) return
+  await resetConfig()
   cityDraft.value = config.weather.city
-  flash('ok', '已恢复默认设置')
+  await refreshSnapshots()
+  flash('ok', '已恢复默认设置，可在「备份与快照」里回滚')
 }
 
 function onNewGroup(): void {
@@ -330,6 +419,14 @@ async function onRefreshHolidays(): Promise<void> {
                 >{{ engine.name }}</button>
               </div>
               <label class="switch">
+                <input v-model="config.search.openInNewTab" type="checkbox" />
+                <span>网址在新标签页打开</span>
+              </label>
+              <p class="hint">
+                开启后搜索、网址导航磁贴、命令面板里的链接、待办绑定的网址都会新开标签页，
+                当前这块新标签页保留着，方便连续开几站；关掉则原地跳转，不会堆一排标签。
+              </p>
+              <label class="switch">
                 <input v-model="config.showSeconds" type="checkbox" />
                 <span>时钟显示秒数</span>
               </label>
@@ -380,7 +477,22 @@ async function onRefreshHolidays(): Promise<void> {
                   >移除</button>
                 </li>
               </ul>
+
+              <label class="switch">
+                <input v-model="config.layout.snapToEdges" type="checkbox" />
+                <span>拖动时吸附对齐（显示参考线）</span>
+              </label>
+              <label class="switch">
+                <input v-model="config.layout.autoCompact" type="checkbox" />
+                <span>松手后自动去留白</span>
+              </label>
+              <p class="hint">
+                吸附会把卡片贴到其它卡片的边或画布边上，参考线指示对齐位置；
+                自动去留白只把<strong>其它</strong>卡片往上收，不会挪动你刚放下的那张，也不会改变左右顺序。
+              </p>
+
               <div class="row">
+                <button type="button" class="btn ghost" @click="onCompact">立即去掉留白</button>
                 <button type="button" class="btn ghost" @click="tidyLayout">按顺序重排卡片</button>
               </div>
             </section>
@@ -467,12 +579,62 @@ async function onRefreshHolidays(): Promise<void> {
             </section>
 
             <section class="group">
+              <h3>备份与快照</h3>
+              <p class="hint">
+                每天第一次打开会自动留一份快照；<b>恢复默认、覆盖导入前也会自动留</b>。
+                只保留最近 5 份，和配置存在同一处（卸载扩展会一起清除）。
+              </p>
+
+              <ul v-if="snapshotState.items.length" class="list snap-list">
+                <li v-for="snap in snapshotState.items" :key="snap.id">
+                  <span class="snap__left">
+                    <b class="snap__reason">{{ snap.reason }}</b>
+                    <span class="snap__time">{{ formatSnapshotTime(snap.at) }}</span>
+                  </span>
+                  <span class="snap__meta">{{ snap.counts.links }} 链接 · {{ snap.counts.todos }} 待办</span>
+                  <button type="button" class="link-action" @click="onRestoreSnapshot(snap.id)">恢复</button>
+                  <button type="button" class="link-danger" @click="onDeleteSnapshot(snap.id)">删除</button>
+                </li>
+              </ul>
+              <p v-else class="hint">{{ snapshotState.loading ? '正在读取快照…' : '还没有快照，可以手动创建一份。' }}</p>
+
+              <div class="row">
+                <button type="button" class="btn ghost" @click="onCreateSnapshot">立即创建快照</button>
+              </div>
+            </section>
+
+            <section class="group">
               <h3>数据与分享</h3>
               <div class="row">
                 <button type="button" class="btn" @click="onExport">导出配置</button>
                 <button type="button" class="btn ghost" @click="triggerImport">导入配置</button>
                 <input ref="importInput" type="file" accept="application/json,.json" hidden @change="onImportChange" />
               </div>
+
+              <div v-if="pendingImport" class="conflict">
+                <p class="conflict__head">
+                  已读取 <b>{{ pendingImportName || '配置文件' }}</b>
+                  <span v-if="pendingImport.version">（第 {{ pendingImport.version }} 版）</span>
+                </p>
+                <p class="conflict__row">
+                  <span>文件里：{{ pendingImport.counts.groups }} 组 /
+                    {{ pendingImport.counts.links }} 链接 / {{ pendingImport.counts.todos }} 待办 /
+                    {{ pendingImport.counts.notes }} 笔记</span>
+                  <span>当前：{{ currentCounts.groups }} 组 /
+                    {{ currentCounts.links }} 链接 / {{ currentCounts.todos }} 待办 /
+                    {{ currentCounts.notes }} 笔记</span>
+                </p>
+                <p class="hint">
+                  <b>合并</b>只补当前没有的链接、待办和笔记，保留现在的布局与主题；
+                  <b>覆盖</b>整份替换（布局也会变），导入前会自动留一份快照。
+                </p>
+                <div class="row">
+                  <button type="button" class="btn" @click="onApplyImport('merge')">合并导入</button>
+                  <button type="button" class="btn ghost" @click="onApplyImport('replace')">覆盖导入</button>
+                  <button type="button" class="btn ghost" @click="cancelImport">取消</button>
+                </div>
+              </div>
+
               <div class="row">
                 <button type="button" class="btn ghost" @click="onImportBookmarks">从浏览器书签导入</button>
               </div>
@@ -484,11 +646,14 @@ async function onRefreshHolidays(): Promise<void> {
               <p class="hint">
                 换电脑或发给同事：导出 JSON → 对方「导入配置」即可复刻布局与全部内容。
               </p>
+              <div class="row">
+                <button type="button" class="btn ghost" @click="onOpenGuide">重新查看操作指引</button>
+              </div>
               <button type="button" class="btn danger" @click="onReset">恢复默认设置</button>
             </section>
           </div>
 
-          <footer class="settings__foot">edge-nav v0.5.0 · Manifest V3</footer>
+          <footer class="settings__foot">edge-nav v{{ appVersion }} · Manifest V3</footer>
         </aside>
       </div>
     </transition>
@@ -813,6 +978,78 @@ async function onRefreshHolidays(): Promise<void> {
 
 .link-danger:hover {
   color: var(--danger);
+}
+
+.snap-list li {
+  gap: 6px;
+}
+
+.snap__left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.snap__reason {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.snap__time {
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.snap__meta {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.link-action {
+  flex: none;
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.link-action:hover {
+  color: var(--accent);
+}
+
+.conflict {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--accent-line);
+  background: var(--accent-weak);
+}
+
+.conflict__head {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.conflict__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-2);
 }
 
 .drawer-enter-active,

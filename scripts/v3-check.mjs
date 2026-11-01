@@ -33,9 +33,19 @@ const mouse = (type, x, y) =>
 
 await send('Page.enable')
 await send('Runtime.enable')
+await send('Emulation.setDeviceMetricsOverride', {
+  width: 1440,
+  height: 900,
+  deviceScaleFactor: 1,
+  mobile: false,
+})
 await evaluate(`localStorage.clear()`)
 await send('Page.reload', { ignoreCache: true })
 await sleep(2600)
+
+// 首次安装会弹全屏操作指引，先关掉再操作
+await evaluate(`document.querySelector('.guide__foot .guide__btn:last-child')?.click()`)
+await sleep(300)
 
 const out = {}
 
@@ -87,7 +97,7 @@ out.calendar = await evaluate(`(async () => {
 /* ---------- 3. 拖拽回归（先关掉设置抽屉，否则遮罩会吃掉鼠标事件） ---------- */
 await evaluate(`document.querySelector('.settings__close')?.click()`)
 await sleep(300)
-await evaluate(`[...document.querySelectorAll('.dock__btn')].find(b => b.textContent.includes('布局')).click()`)
+await evaluate(`document.querySelector('.dock__item--layout').click()`)
 await sleep(350)
 const box = await evaluate(`(() => {
   const frame = [...document.querySelectorAll('.frame')].find(f => f.querySelector('.notes'))

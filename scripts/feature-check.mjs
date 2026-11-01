@@ -63,7 +63,7 @@ const payload = {
 
 out.imported = await evaluate(`(async () => {
   // 设置抽屉是 v-if 渲染，必须先打开才有隐藏的 file input
-  [...document.querySelectorAll('.dock__btn')].find(b => b.textContent.includes('设置')).click()
+  document.querySelector('.dock__item--settings').click()
   await new Promise(r => setTimeout(r, 400))
   const input = [...document.querySelectorAll('input[type=file]')].find(i => (i.accept || '').includes('json'))
   if (!input) return { error: 'import input not found' }
@@ -72,6 +72,11 @@ out.imported = await evaluate(`(async () => {
   dt.items.add(file)
   input.files = dt.files
   input.dispatchEvent(new Event('change', { bubbles: true }))
+  await new Promise(r => setTimeout(r, 400))
+  // v0.6 起导入会先弹「覆盖 / 合并」确认，回归脚本按覆盖走
+  const cover = [...document.querySelectorAll('.conflict button')].find(b => b.textContent.includes('覆盖导入'))
+  if (!cover) return { error: 'conflict panel not found' }
+  cover.click()
   await new Promise(r => setTimeout(r, 800))
   const cfg = JSON.parse(localStorage.getItem('edge-nav:config') || '{}')
   const statusEl = document.querySelector('.status')
@@ -98,7 +103,7 @@ out.addTodo = await evaluate(`(async () => {
   const todo = document.querySelector('.todo')
   if (!todo) {
     // 导入配置里没有待办组件，先加一个
-    [...document.querySelectorAll('.dock__btn')].find(b => b.textContent.includes('设置')).click()
+    document.querySelector('.dock__item--settings').click()
     await new Promise(r => setTimeout(r, 300))
     const chips = [...document.querySelectorAll('.chip')]
     const add = chips.find(c => c.textContent.includes('待办') && !c.disabled)

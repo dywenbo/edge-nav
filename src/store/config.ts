@@ -3,6 +3,7 @@ import type {
   AppConfig,
   BookmarkFolder,
   DayMark,
+  FocusState,
   LinkItem,
   LinkGroup,
   NoteItem,
@@ -16,10 +17,15 @@ import type {
 import { storageGet, storageSet } from '@/utils/storage'
 import { uid } from '@/utils/id'
 import { CANVAS_W, GAP, MIN_H, MIN_W, snap } from '@/data/layout'
+import { compactWidgets } from '@/utils/layoutSnap'
 import { STYLE_WALLPAPER } from '@/data/wallpapers'
+import { captureSnapshot, readSnapshots } from '@/utils/snapshots'
+import { mergeConfig, parseConfigPayload } from '@/utils/configTransfer'
 
 const STORAGE_KEY = 'edge-nav:config'
-export const CONFIG_VERSION = 6
+/** 迁移前原样留一份，避免改坏了连原始数据都找不回来 */
+const RAW_BACKUP_KEY = 'edge-nav:config-raw'
+export const CONFIG_VERSION = 8
 
 const pad = (n: number): string => String(n).padStart(2, '0')
 
@@ -45,8 +51,14 @@ export const DEFAULT_CONFIG: AppConfig = {
     blur: 0,
     dim: 0,
   },
+  layout: {
+    snapToEdges: true,
+    autoCompact: true,
+  },
   search: {
     engine: 'bing',
+    // 保连续开站的体验，默认新标签页打开；想原地跳转可在设置里关掉
+    openInNewTab: true,
   },
   weather: {
     city: '北京',
@@ -91,6 +103,7 @@ export const DEFAULT_CONFIG: AppConfig = {
       done: false,
       priority: 'high',
       due: todayISO(),
+      url: '',
       subtasks: [
         { id: 'st-1', text: '同步昨天进度', done: false },
         { id: 'st-2', text: '确认今天的阻塞项', done: false },
@@ -103,6 +116,7 @@ export const DEFAULT_CONFIG: AppConfig = {
       done: false,
       priority: 'normal',
       due: fromToday(2),
+      url: '',
       subtasks: [],
       createdAt: Date.now(),
     },
@@ -118,6 +132,16 @@ export const DEFAULT_CONFIG: AppConfig = {
   ],
   calendar: {
     overrides: {},
+  },
+  focus: {
+    minutes: 25,
+    endsAt: 0,
+    remaining: 0,
+    running: false,
+    todoId: '',
+    completed: 0,
+    day: '',
+    lastDoneAt: 0,
   },
   widgets: [
     { id: 'w-overview', type: 'overview', x: 0, y: 0, w: CANVAS_W, h: 180 },
@@ -287,7 +311,17 @@ function migrate(raw: Partial<AppConfig>): AppConfig {
       : base.theme,
     style,
     wallpaper,
-    search: { ...base.search, ...(raw.search ?? {}) },
+    // v7 → v8：拖拽吸附与自动去留白，默认都开
+    layout: {
+      snapToEdges: raw.layout?.snapToEdges !== false,
+      autoCompact: raw.layout?.autoCompact !== false,
+    },
+    // v6 → v7：新增「搜索结果是否新开标签页」，老配置保持原来的新标签页行为
+    search: {
+      ...base.search,
+      ...(raw.search ?? {}),
+      openInNewTab: raw.search?.openInNewTab !== false,
+    },
     weather: { ...base.weather, ...(raw.weather ?? {}) },
     showSeconds: typeof raw.showSeconds === 'boolean' ? raw.showSeconds : base.showSeconds,
     groups,
@@ -318,6 +352,7 @@ function migrate(raw: Partial<AppConfig>): AppConfig {
           done: !!t.done,
           priority: (t.priority ?? 'normal') as Priority,
           due: t.due ?? '',
+          url: typeof t.url === 'string' ? t.url : '',
           subtasks: Array.isArray(t.subtasks) ? t.subtasks : [],
           createdAt: t.createdAt ?? Date.now(),
         }))
@@ -337,14 +372,59 @@ function migrate(raw: Partial<AppConfig>): AppConfig {
           ? (raw.calendar.overrides as Record<string, DayMark>)
           : {},
     },
+    focus: normalizeFocus(raw.focus as Partial<FocusState> | undefined, base.focus),
     widgets,
   }
 }
 
-export async function loadConfig(): Promise<void> {
+/** 专注状态从存储里读出来时的兜底：脏数据一律回落到默认值，不让倒计时卡死 */
+function normalizeFocus(raw: Partial<FocusState> | undefined, base: FocusState): FocusState {
+  const minutes = Math.min(180, Math.max(5, Math.round(Number(raw?.minutes) || base.minutes)))
+  const running = !!raw?.running && Number(raw?.endsAt) > 0
+  return {
+    minutes,
+    endsAt: running ? Number(raw?.endsAt) : 0,
+    remaining: Math.max(0, Math.round(Number(raw?.remaining) || 0)),
+    running,
+    todoId: typeof raw?.todoId === 'string' ? raw.todoId : '',
+    completed: Math.max(0, Math.round(Number(raw?.completed) || 0)),
+    day: typeof raw?.day === 'string' ? raw.day : '',
+    lastDoneAt: Math.max(0, Number(raw?.lastDoneAt) || 0),
+  }
+}
+
+/**
+ * 读取并迁移配置。
+ * 返回「存储里本来就有配置」——首次安装与老用户升级的引导文案不同，靠它区分。
+ */
+export async function loadConfig(): Promise<boolean> {
   const saved = await storageGet<Partial<AppConfig>>(STORAGE_KEY)
-  if (saved) Object.assign(config, migrate(saved))
+  if (saved) {
+    try {
+      Object.assign(config, migrate(saved))
+    } catch (err) {
+      // 迁移失败时绝不直接把默认值当成用户数据写回去：
+      // 先把原始数据原样备份到另一个键，用户还能从设置里找回。
+      console.error('[config] 迁移失败，原始数据已备份到', RAW_BACKUP_KEY, err)
+      await storageSet(RAW_BACKUP_KEY, saved)
+      Object.assign(config, structuredClone(DEFAULT_CONFIG))
+    }
+  }
   loaded = true
+  void ensureDailySnapshot()
+  return !!saved
+}
+
+/** 每天第一次打开新标签页时留一份快照，同一天不重复写 */
+async function ensureDailySnapshot(): Promise<void> {
+  try {
+    const list = await readSnapshots()
+    const last = list[0]
+    if (last && new Date(last.at).toDateString() === new Date().toDateString()) return
+    await captureSnapshot('每日自动备份', config)
+  } catch (err) {
+    console.warn('[config] 自动快照失败', err)
+  }
 }
 
 /** 防抖写盘：拖拽/缩放/输入这类高频操作只落一次盘 */
@@ -358,7 +438,14 @@ export function saveConfig(): void {
 
 watch(config, saveConfig, { deep: true })
 
-export function resetConfig(): void {
+/** 把一份原始配置（导入文件 / 快照）经过迁移后落到全局状态 */
+export function applyConfig(raw: Partial<AppConfig>): void {
+  Object.assign(config, migrate(raw))
+}
+
+/** 恢复默认：先留一份快照，误点也能从「备份与快照」里回来 */
+export async function resetConfig(): Promise<void> {
+  await captureSnapshot('恢复默认前', config)
   Object.assign(config, structuredClone(DEFAULT_CONFIG))
 }
 
@@ -442,6 +529,7 @@ export function addTodo(patch: Partial<TodoItem> & { text: string }): void {
     done: false,
     priority: patch.priority ?? 'normal',
     due: patch.due ?? '',
+    url: patch.url ?? '',
     subtasks: patch.subtasks ?? [],
     createdAt: Date.now(),
   })
@@ -484,6 +572,71 @@ export function removeSubtask(todoId: string, subtaskId: string): void {
   if (!todo) return
   const index = todo.subtasks.findIndex((s) => s.id === subtaskId)
   if (index >= 0) todo.subtasks.splice(index, 1)
+}
+
+/* ------------------------- 专注计时 ------------------------- */
+
+/** 时长预设：点一下循环切换，不额外加一层设置 */
+export const FOCUS_PRESETS = [15, 25, 45, 60]
+
+export function startFocus(todoId = ''): void {
+  const focus = config.focus
+  const seconds = focus.remaining > 0 ? focus.remaining : focus.minutes * 60
+  focus.running = true
+  focus.remaining = 0
+  focus.endsAt = Date.now() + seconds * 1000
+  focus.todoId = config.todos.some((t) => t.id === todoId) ? todoId : ''
+}
+
+export function pauseFocus(): void {
+  const focus = config.focus
+  if (!focus.running) return
+  focus.remaining = Math.max(0, Math.round((focus.endsAt - Date.now()) / 1000))
+  focus.running = false
+  focus.endsAt = 0
+}
+
+/** 继续：保留绑定的待办，从剩余秒数接着走 */
+export function resumeFocus(): void {
+  const focus = config.focus
+  if (focus.running) return
+  startFocus(focus.todoId)
+}
+
+export function stopFocus(): void {
+  const focus = config.focus
+  focus.running = false
+  focus.endsAt = 0
+  focus.remaining = 0
+  focus.todoId = ''
+}
+
+/** 一轮走完：计一次今日完成数，然后复位，等下一轮 */
+export function finishFocus(): void {
+  const focus = config.focus
+  const today = todayISO()
+  focus.running = false
+  focus.endsAt = 0
+  focus.remaining = 0
+  focus.completed = (focus.day === today ? focus.completed : 0) + 1
+  focus.day = today
+  focus.lastDoneAt = Date.now()
+}
+
+export function setFocusMinutes(minutes: number): void {
+  const focus = config.focus
+  focus.minutes = Math.min(180, Math.max(5, Math.round(minutes)))
+  if (!focus.running) focus.remaining = 0
+}
+
+export function cycleFocusMinutes(): void {
+  const index = FOCUS_PRESETS.indexOf(config.focus.minutes)
+  setFocusMinutes(FOCUS_PRESETS[(index + 1) % FOCUS_PRESETS.length])
+}
+
+/** 今日已完成的专注轮数（跨天自动归零，不用等定时任务） */
+export function focusCountToday(): number {
+  return config.focus.day === todayISO() ? config.focus.completed : 0
 }
 
 /* ------------------------- 记事本 ------------------------- */
@@ -660,7 +813,15 @@ export function addWidget(type: WidgetType): void {
 
 export function removeWidget(id: string): void {
   const index = config.widgets.findIndex((w) => w.id === id)
-  if (index >= 0) config.widgets.splice(index, 1)
+  if (index < 0) return
+  config.widgets.splice(index, 1)
+  // 卡片删掉后原地会留一个洞，顺手把下面的卡片收上来
+  if (config.layout.autoCompact) compactWidgets(config.widgets)
+}
+
+/** 手动「去掉留白」：所有卡片都收到能放下的最高位置 */
+export function compactLayout(): boolean {
+  return compactWidgets(config.widgets)
 }
 
 export function updateWidgetRect(
@@ -696,21 +857,31 @@ export function exportConfig(): string {
   )
 }
 
-export function importConfig(text: string): { ok: boolean; message: string } {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return { ok: false, message: '不是合法的 JSON 文件' }
+export type ImportMode = 'replace' | 'merge'
+
+/**
+ * 导入配置。
+ * - replace：整份替换（布局、主题一起换），导入前自动留快照
+ * - merge：只并内容，保留当前布局与主题；链接/待办/笔记按内容去重
+ */
+export async function importConfig(
+  text: string,
+  mode: ImportMode = 'replace',
+): Promise<{ ok: boolean; message: string }> {
+  const parsed = parseConfigPayload(text)
+  if (!parsed.ok) return parsed
+
+  await captureSnapshot(mode === 'merge' ? '合并导入前' : '覆盖导入前', config)
+
+  if (mode === 'merge') {
+    Object.assign(config, mergeConfig(config, parsed.data.raw))
+    const { links, todos, notes } = parsed.data.counts
+    return {
+      ok: true,
+      message: `已合并：文件中的 ${links} 条链接 / ${todos} 条待办 / ${notes} 条笔记，重复项已跳过`,
+    }
   }
-  const payload = parsed as { _format?: string; config?: Partial<AppConfig> }
-  const raw = payload?.config ?? (parsed as Partial<AppConfig>)
-  if (!raw || typeof raw !== 'object') {
-    return { ok: false, message: '文件结构不正确' }
-  }
-  if (!Array.isArray(raw.widgets) || !Array.isArray(raw.groups)) {
-    return { ok: false, message: '缺少 widgets 或 groups 字段' }
-  }
-  Object.assign(config, migrate(raw))
-  return { ok: true, message: '导入成功' }
+
+  applyConfig(parsed.data.raw)
+  return { ok: true, message: '已覆盖导入，可在「备份与快照」里一键回滚' }
 }

@@ -8,11 +8,14 @@ import {
   clearDoneTodos,
   removeSubtask,
   removeTodo,
+  startFocus,
   toggleSubtask,
   toggleTodo,
   updateTodo,
 } from '@/store/config'
+import { openUrl } from '@/utils/openUrl'
 import CardHead from './CardHead.vue'
+import FocusBar from './FocusBar.vue'
 import Icon from './Icon.vue'
 
 const expandedId = ref<string | null>(null)
@@ -82,6 +85,16 @@ function addSub(todoId: string): void {
 function toggleExpand(id: string): void {
   expandedId.value = expandedId.value === id ? null : id
 }
+
+/** 打开待办绑定的网址：跟随「搜索结果是否新开标签页」的开关 */
+function openTodoLink(todo: TodoItem): void {
+  if (!todo.url) return
+  openUrl(todo.url, config.search.openInNewTab)
+}
+
+function setTodoUrl(todo: TodoItem, value: string): void {
+  updateTodo(todo.id, { url: value.trim() })
+}
 </script>
 
 <template>
@@ -120,6 +133,8 @@ function toggleExpand(id: string): void {
       <button type="button" class="chip chip--ghost" @click="draftDue = ''">清除</button>
     </div>
 
+    <FocusBar />
+
     <ul v-if="sorted.length" class="todo__list">
       <li
         v-for="todo in sorted"
@@ -141,6 +156,22 @@ function toggleExpand(id: string): void {
           <button type="button" class="item__text" @click="toggleExpand(todo.id)">
             {{ todo.text }}
           </button>
+
+          <button
+            v-if="todo.url"
+            type="button"
+            class="item__act"
+            title="打开绑定的网址"
+            @click.stop="openTodoLink(todo)"
+          ><Icon name="external" :size="11" /></button>
+
+          <button
+            v-if="!todo.done"
+            type="button"
+            class="item__act"
+            :title="`专注这件事 ${config.focus.minutes} 分钟`"
+            @click.stop="startFocus(todo.id)"
+          ><Icon name="play" :size="10" /></button>
 
           <span v-if="todo.due" class="item__due" :class="{ 'item__due--over': isOverdue(todo) }">
             {{ formatDue(todo.due) }}
@@ -186,9 +217,34 @@ function toggleExpand(id: string): void {
               class="chip chip--ghost"
               @click="updateTodo(todo.id, { due: '' })"
             >清除</button>
-          </div>
+            </div>
 
-          <ul v-if="todo.subtasks.length" class="subs">
+            <div class="item__row-line">
+            <span class="item__label">链接</span>
+            <input
+            class="todo__link"
+            type="text"
+            placeholder="https://…（可选，点 ↗ 直达）"
+            :value="todo.url ?? ''"
+            @change="setTodoUrl(todo, ($event.target as HTMLInputElement).value)"
+            />
+            <button
+            v-if="todo.url"
+            type="button"
+            class="chip"
+            title="打开这个网址"
+            @click="openTodoLink(todo)"
+            >打开</button>
+            <button
+            v-if="todo.url"
+            type="button"
+            class="chip chip--ghost"
+            title="清除绑定"
+            @click="setTodoUrl(todo, '')"
+            >清除</button>
+            </div>
+
+            <ul v-if="todo.subtasks.length" class="subs">
             <li v-for="sub in todo.subtasks" :key="sub.id">
               <button
                 type="button"
@@ -451,6 +507,57 @@ function toggleExpand(id: string): void {
 
 .item__del:hover {
   color: var(--danger);
+}
+
+.item__act {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-3);
+  opacity: 0;
+}
+
+.item__row:hover .item__act {
+  opacity: 1;
+}
+
+.item__act:hover {
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+/* 触屏没有 hover，操作按钮直接常显 */
+@media (hover: none) {
+  .item__act {
+    opacity: 1;
+  }
+}
+
+.todo__link {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--control-bg);
+  color: var(--text-2);
+  font-size: 11px;
+  outline: none;
+}
+
+.todo__link:focus {
+  border-color: var(--accent);
+}
+
+.todo__link::placeholder {
+  color: var(--text-3);
 }
 
 .item__panel {

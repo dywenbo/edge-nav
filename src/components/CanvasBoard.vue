@@ -4,6 +4,12 @@ import type { WidgetItem, WidgetType } from '@/types'
 import { config } from '@/store/config'
 import { activeWidgetId, canvasWidth, editMode, isFlow } from '@/store/ui'
 import { CANVAS_W, GAP, MIN_H, MIN_W, snap } from '@/data/layout'
+import {
+  compactWidgets,
+  findSideBySideX,
+  isSideBySide,
+  snapToNeighbors,
+} from '@/utils/layoutSnap'
 import WidgetFrame from './WidgetFrame.vue'
 import OverviewCard from './OverviewCard.vue'
 import LinkGrid from './LinkGrid.vue'
@@ -104,6 +110,15 @@ interface DragState {
 
 let drag: DragState | null = null
 
+/** 吸附参考线（设计坐标），拖动时实时更新，松手清空 */
+const guideX = ref<number | null>(null)
+const guideY = ref<number | null>(null)
+
+function clearGuides(): void {
+  guideX.value = null
+  guideY.value = null
+}
+
 /** 碰撞判定时向外扩 GAP/2，保证最终卡片之间至少留出 GAP 的间隙而不是紧贴 */
 const EPS = GAP / 2
 
@@ -135,7 +150,11 @@ function resolveCollisions(activeId: string): void {
     let guard = 0
     for (;;) {
       const rect = { x: item.x, y, w: item.w, h: item.h }
-      const hit = placed.find((p) => overlap(rect, p))
+      // 被拖卡片只是横向压住同一行卡片的一小条时不挤开它：
+      // 松手时会把拖动卡片挪到并排位置（findSideBySideX），否则两张卡永远凑不到一起
+      const hit = placed.find(
+        (p) => overlap(rect, p) && !(p === active && isSideBySide(rect, active, EPS)),
+      )
       if (!hit) break
       y = hit.y + hit.h + GAP
       if (++guard > 200) break
@@ -156,6 +175,7 @@ function startDrag(event: PointerEvent, widget: WidgetItem, mode: DragMode): voi
     boundsW: designW.value,
   }
   activeWidgetId.value = widget.id
+  clearGuides()
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp, { once: true })
   document.body.classList.add('is-dragging')
@@ -183,8 +203,31 @@ function onPointerMove(event: PointerEvent): void {
   const dy = (event.clientY - drag.startY) / (unitY.value || 1)
 
   if (drag.mode === 'move') {
-    const nextX = Math.max(0, Math.min(snap(drag.origin.x + dx), drag.boundsW - widget.w))
-    const nextY = Math.max(0, snap(drag.origin.y + dy))
+    const rawX = snap(drag.origin.x + dx)
+    const rawY = snap(drag.origin.y + dy)
+
+    let nextX = Math.max(0, Math.min(rawX, drag.boundsW - widget.w))
+    let nextY = Math.max(0, rawY)
+    let snappedX: number | null = null
+    let snappedY: number | null = null
+
+    if (config.layout.snapToEdges) {
+      const others = config.widgets.filter((w) => w.id !== widget.id)
+      const result = snapToNeighbors(
+        { x: nextX, y: nextY, w: widget.w, h: widget.h },
+        others,
+        drag.boundsW,
+      )
+      // 吸附值被边界夹回来时，参考线就不该再画了
+      snappedX = result.x <= drag.boundsW - widget.w && result.x >= 0 ? result.guideX : null
+      snappedY = result.y >= 0 ? result.guideY : null
+      nextX = Math.max(0, Math.min(result.x, drag.boundsW - widget.w))
+      nextY = Math.max(0, result.y)
+    }
+
+    guideX.value = snappedX
+    guideY.value = snappedY
+
     if (nextX !== widget.x || nextY !== widget.y) {
       widget.x = nextX
       widget.y = nextY
@@ -208,10 +251,24 @@ function onPointerUp(): void {
   if (drag) {
     const widget = config.widgets.find((w) => w.id === drag!.id)
     if (widget) {
-      widget.x = snap(Math.max(0, Math.min(widget.x, designW.value - widget.w)))
-      widget.y = snap(Math.max(0, widget.y))
+      // 只夹边界，不再二次 snap：否则刚吸上的对齐位置会被取整打散
+      widget.x = Math.max(0, Math.min(widget.x, designW.value - widget.w))
+      widget.y = Math.max(0, widget.y)
+      if (drag.mode === 'move') {
+        // 并排收尾：横向压住同一行卡片时挪到最近的空位，而不是把对方顶下去
+        const others = config.widgets.filter((w) => w.id !== widget.id)
+        const sideX = findSideBySideX(
+          { x: widget.x, y: widget.y, w: widget.w, h: widget.h },
+          others,
+          designW.value,
+        )
+        if (sideX !== null) widget.x = sideX
+      }
+      // 被拖走的卡片留在原地，其它卡片收上来填空位（只上移，不改变顺序）
+      if (config.layout.autoCompact) compactWidgets(config.widgets, widget.id)
     }
   }
+  clearGuides()
   drag = null
   activeWidgetId.value = null
 }
@@ -279,6 +336,18 @@ onBeforeUnmount(() => {
       >
         <component :is="componentMap[widget.type]" :widget="widget" />
       </WidgetFrame>
+
+      <!-- 吸附参考线：贴到哪条边就画哪条 -->
+      <span
+        v-if="guideX !== null"
+        class="board__guide board__guide--v"
+        :style="{ left: `${Math.round(guideX * stretch)}px` }"
+      />
+      <span
+        v-if="guideY !== null"
+        class="board__guide board__guide--h"
+        :style="{ top: `${guideY}px` }"
+      />
     </div>
   </div>
 </template>
@@ -306,5 +375,27 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+/* 吸附参考线：2px + 一点辉光，压在卡片之上，不接收指针事件 */
+.board__guide {
+  position: absolute;
+  z-index: 6;
+  pointer-events: none;
+  background: var(--accent);
+  box-shadow: 0 0 5px var(--accent);
+  opacity: 0.85;
+}
+
+.board__guide--v {
+  top: 0;
+  width: 2px;
+  height: 100%;
+}
+
+.board__guide--h {
+  left: 0;
+  height: 2px;
+  width: 100%;
 }
 </style>

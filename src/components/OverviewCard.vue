@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { config } from '@/store/config'
+import { config, finishFocus, focusCountToday, pauseFocus, startFocus } from '@/store/config'
 import { useWeather } from '@/composables/useWeather'
 import Icon from './Icon.vue'
 import SearchBox from './SearchBox.vue'
@@ -50,9 +50,32 @@ const stats = computed(() => {
   return { pending, today, overdue }
 })
 
+/* 专注：运行中显示倒计时，空闲时显示今日已完成轮数，点一下即可开始/暂停 */
+const focusLeft = computed(() =>
+  config.focus.running ? Math.max(0, Math.ceil((config.focus.endsAt - now.value.getTime()) / 1000)) : 0,
+)
+
+const focusText = computed(() =>
+  config.focus.running ? `${pad(Math.floor(focusLeft.value / 60))}:${pad(focusLeft.value % 60)}` : String(focusCountToday()),
+)
+
+const focusTitle = computed(() => {
+  if (config.focus.running) {
+    return `专注中，剩余 ${Math.ceil(focusLeft.value / 60)} 分钟 · 点击暂停`
+  }
+  return `今日已完成 ${focusCountToday()} 轮专注 · 点击开始 ${config.focus.minutes} 分钟`
+})
+
+function toggleFocus(): void {
+  if (config.focus.running) pauseFocus()
+  else startFocus(config.focus.todoId || '')
+}
+
 onMounted(() => {
   timer = window.setInterval(() => {
     now.value = new Date()
+    // 待办卡可能被用户移除，这里也要负责收尾，否则倒计时会永远停在 00:00
+    if (config.focus.running && now.value.getTime() >= config.focus.endsAt) finishFocus()
   }, 1000)
 })
 
@@ -81,6 +104,16 @@ onBeforeUnmount(() => window.clearInterval(timer))
           <b>{{ stats.overdue }}</b>
           <span>已逾期</span>
         </div>
+        <button
+          type="button"
+          class="ov__stat ov__stat--btn"
+          :class="{ 'ov__stat--live': config.focus.running }"
+          :title="focusTitle"
+          @click="toggleFocus"
+        >
+          <b>{{ focusText }}</b>
+          <span>{{ config.focus.running ? '专注中' : '今日专注' }}</span>
+        </button>
       </div>
 
       <button type="button" class="ov__weather" :title="`${config.weather.city} · 点击刷新`" @click="load(true)">
@@ -190,6 +223,25 @@ onBeforeUnmount(() => window.clearInterval(timer))
 
 .ov__stat--alert b {
   color: var(--danger);
+}
+
+/* 专注统计是个按钮：点一下开始 / 暂停，不额外占一块地方 */
+.ov__stat--btn {
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  border-radius: var(--radius-sm);
+}
+
+.ov__stat--btn:hover {
+  background: var(--surface-hover);
+}
+
+.ov__stat--live b {
+  color: var(--accent);
 }
 
 /* 窄屏 / 流式布局下卡片放不下三段内容，统计条让位给时钟和天气 */

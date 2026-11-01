@@ -68,16 +68,27 @@ const boxOf = (cls) =>
 
 await send('Page.enable')
 await send('Runtime.enable')
+// 无头窗口默认 800 宽会掉进窄屏流式布局（禁用拖拽），固定成桌面视口
+await send('Emulation.setDeviceMetricsOverride', {
+  width: 1440,
+  height: 900,
+  deviceScaleFactor: 1,
+  mobile: false,
+})
 
 // 清空历史状态，从默认布局开始
 await evaluate(`localStorage.clear()`)
 await send('Page.reload', { ignoreCache: true })
 await sleep(2600)
 
+// 首次安装会弹全屏操作指引，挡住拖拽，先关掉
+await evaluate(`document.querySelector('.guide__foot .guide__btn:last-child')?.click()`)
+await sleep(300)
+
 const result = {}
 
 // 进入编辑模式
-await evaluate(`[...document.querySelectorAll('.dock__btn')].find(b => b.textContent.includes('布局')).click()`)
+await evaluate(`document.querySelector('.dock__item--layout').click()`)
 await sleep(400)
 
 /* ---------- 1. 拖动 ---------- */
