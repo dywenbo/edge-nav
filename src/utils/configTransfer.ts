@@ -31,7 +31,9 @@ function normalizeLinks(links: unknown): LinkItem[] {
     const link = item as Partial<LinkItem>
     const url = typeof link.url === 'string' ? link.url.trim() : ''
     if (!url) continue
-    result.push({ id: uid(), title: (link.title ?? '').trim() || url, url })
+    // alias 是命令面板的搜索别名（中文标题的拼音首字母），导入时一并带走
+    const alias = typeof link.alias === 'string' ? link.alias.trim().slice(0, 40) : ''
+    result.push({ id: uid(), title: (link.title ?? '').trim() || url, url, ...(alias ? { alias } : {}) })
   }
   return result
 }

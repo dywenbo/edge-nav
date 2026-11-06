@@ -8,6 +8,7 @@ import type {
   LinkGroup,
   NoteItem,
   Priority,
+  SearchEngineItem,
   ThemeMode,
   TodoItem,
   UIStyle,
@@ -17,6 +18,7 @@ import type {
 import { storageGet, storageSet } from '@/utils/storage'
 import { uid } from '@/utils/id'
 import { CANVAS_W, GAP, MIN_H, MIN_W, snap } from '@/data/layout'
+import { BUILTIN_ENGINES, activeEngines } from '@/data/engines'
 import { compactWidgets } from '@/utils/layoutSnap'
 import { STYLE_WALLPAPER } from '@/data/wallpapers'
 import { captureSnapshot, readSnapshots } from '@/utils/snapshots'
@@ -25,7 +27,8 @@ import { mergeConfig, parseConfigPayload } from '@/utils/configTransfer'
 const STORAGE_KEY = 'edge-nav:config'
 /** 迁移前原样留一份，避免改坏了连原始数据都找不回来 */
 const RAW_BACKUP_KEY = 'edge-nav:config-raw'
-export const CONFIG_VERSION = 8
+/** v9：自定义搜索引擎、完全离线开关、极简模式、常用站点、链接搜索别名 */
+export const CONFIG_VERSION = 9
 
 const pad = (n: number): string => String(n).padStart(2, '0')
 
@@ -59,6 +62,18 @@ export const DEFAULT_CONFIG: AppConfig = {
     engine: 'bing',
     // 保连续开站的体验，默认新标签页打开；想原地跳转可在设置里关掉
     openInNewTab: true,
+    engines: structuredClone(BUILTIN_ENGINES),
+  },
+  network: {
+    // 默认允许天气 / 节假日联网；用户可在「隐私与权限」里一键关掉
+    allowOnlineData: true,
+  },
+  view: {
+    minimal: false,
+  },
+  usage: {
+    // 只记录本扩展内的点击，不读取浏览历史
+    enabled: true,
   },
   weather: {
     city: '北京',
@@ -259,6 +274,39 @@ function reflow(widgets: WidgetItem[]): void {
   }
 }
 
+/**
+ * v8 → v9：搜索引擎从静态常量变成用户可配置列表。
+ * - 旧配置没有 engines 字段 → 补 5 个内置引擎
+ * - 内置项被误删 → 自动补回，保证搜索框永远至少有一个引擎
+ * - 脏数据（缺 id / url / 重复 id）直接丢弃
+ */
+function normalizeEngines(raw: unknown): SearchEngineItem[] {
+  const base = structuredClone(BUILTIN_ENGINES)
+  if (!Array.isArray(raw) || raw.length === 0) return base
+  const seen = new Set<string>()
+  const list: SearchEngineItem[] = []
+  for (const item of raw) {
+    const engine = item as Partial<SearchEngineItem> | null
+    if (!engine || typeof engine.id !== 'string' || typeof engine.url !== 'string') continue
+    const id = engine.id.trim()
+    if (!id || !engine.url.trim() || seen.has(id)) continue
+    seen.add(id)
+    list.push({
+      id,
+      name: (engine.name || id).trim(),
+      url: engine.url.trim(),
+      shortcut: (engine.shortcut || '').trim().toLowerCase(),
+      enabled: engine.enabled !== false,
+      builtin: !!engine.builtin || base.some((b) => b.id === id),
+      ...(engine.glyph ? { glyph: engine.glyph } : {}),
+    })
+  }
+  for (const builtin of base) {
+    if (!seen.has(builtin.id)) list.push(structuredClone(builtin))
+  }
+  return list
+}
+
 function migrate(raw: Partial<AppConfig>): AppConfig {
   const base = structuredClone(DEFAULT_CONFIG)
   const legacyLinks = (raw as unknown as { links?: LinkItem[] }).links
@@ -317,11 +365,25 @@ function migrate(raw: Partial<AppConfig>): AppConfig {
       autoCompact: raw.layout?.autoCompact !== false,
     },
     // v6 → v7：新增「搜索结果是否新开标签页」，老配置保持原来的新标签页行为
-    search: {
-      ...base.search,
-      ...(raw.search ?? {}),
-      openInNewTab: raw.search?.openInNewTab !== false,
-    },
+    // v8 → v9：引擎列表可配置；当前引擎若被停用 / 删掉，回落到第一个可用引擎
+    search: (() => {
+      const engines = normalizeEngines(raw.search?.engines)
+      const usable = activeEngines(engines)
+      const engine = usable.some((e) => e.id === raw.search?.engine)
+        ? (raw.search?.engine as string)
+        : usable[0].id
+      return {
+        ...base.search,
+        ...(raw.search ?? {}),
+        engines,
+        engine,
+        openInNewTab: raw.search?.openInNewTab !== false,
+      }
+    })(),
+    // v9：完全离线 / 极简模式 / 常用站点，老配置一律保持原行为（联网开、极简关、统计开）
+    network: { allowOnlineData: raw.network?.allowOnlineData !== false },
+    view: { minimal: raw.view?.minimal === true },
+    usage: { enabled: raw.usage?.enabled !== false },
     weather: { ...base.weather, ...(raw.weather ?? {}) },
     showSeconds: typeof raw.showSeconds === 'boolean' ? raw.showSeconds : base.showSeconds,
     groups,

@@ -11,6 +11,22 @@ export interface LinkItem {
   id: string
   title: string
   url: string
+  /** 命令面板的搜索别名（中文标题可填拼音首字母，如「腾讯文档」→ txwd） */
+  alias?: string
+}
+
+/** 搜索框可用的引擎。用户可增删改；内置引擎可停用但不可删除 */
+export interface SearchEngineItem {
+  id: string
+  name: string
+  /** URL 模板：优先用 %s 占位；兼容旧格式（以查询参数结尾，直接拼关键词） */
+  url: string
+  /** !bang 前缀，例如 gh → `!gh vue` */
+  shortcut: string
+  enabled: boolean
+  /** 内置项不可删除，避免用户把引擎列表清空后无法搜东西 */
+  builtin?: boolean
+  glyph?: string
 }
 
 /** 链接分组，对应链接组件顶部的标签页 */
@@ -124,6 +140,20 @@ export interface AppConfig {
     engine: string
     /** 搜索结果与命令面板里的网址是否新开标签页 */
     openInNewTab: boolean
+    /** v9：可自定义、可排序、可停用的引擎列表 */
+    engines: SearchEngineItem[]
+  }
+  /** v9：一键完全离线，禁止天气与节假日的在线请求 */
+  network: {
+    allowOnlineData: boolean
+  }
+  /** v9：极简模式只保留概览卡与网址导航卡 */
+  view: {
+    minimal: boolean
+  }
+  /** v9：常用站点由用户在本扩展里的显式点击生成，不读取浏览历史 */
+  usage: {
+    enabled: boolean
   }
   weather: {
     city: string
