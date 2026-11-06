@@ -12,6 +12,8 @@ import { navLinksOfFolder } from '@/store/bookmarks'
 import { editMode, guideOpen, paletteOpen, settingsOpen } from '@/store/ui'
 import { openUrl } from '@/utils/openUrl'
 import { domainOf } from '@/utils/favicon'
+import { buildSearchUrl, getEngine } from '@/data/engines'
+import { flushUsage, recordUsage, usageMap } from '@/store/usage'
 import Icon from './Icon.vue'
 
 type Kind = 'action' | 'link' | 'bookmark' | 'todo' | 'note'
@@ -33,6 +35,8 @@ interface Entry {
   /** 右侧的操作提示，例如「打开」「完成」「复制」 */
   hint: string
   url?: string
+  /** 搜索别名（中文标题的拼音首字母，由设置里的配置体检生成） */
+  alias?: string
   run: () => void | Promise<void>
 }
 
@@ -61,6 +65,15 @@ function flashFor(text: string): void {
   window.setTimeout(() => {
     if (flash.value === text) flash.value = ''
   }, 2000)
+}
+
+/** 从面板打开链接：记一次显式点击；原地跳转时立刻落盘，别等防抖 */
+function openLink(url: string, title: string): void {
+  if (config.usage.enabled) {
+    recordUsage(url, title)
+    if (!config.search.openInNewTab) flushUsage()
+  }
+  openUrl(url, config.search.openInNewTab)
 }
 
 /* ---------------- 动作 ---------------- */
@@ -123,6 +136,18 @@ const actions = computed<Entry[]>(() => {
         guideOpen.value = true
       },
     },
+    {
+      key: 'act-minimal',
+      kind: 'action',
+      title: config.view.minimal ? '退出极简模式' : '进入极简模式',
+      sub: '只保留时钟天气与网址导航，Esc 可退出',
+      icon: 'grid',
+      hint: '切换',
+      run: () => {
+        config.view.minimal = !config.view.minimal
+        editMode.value = false
+      },
+    },
   ]
 
   const text = query.value.trim()
@@ -138,6 +163,17 @@ const actions = computed<Entry[]>(() => {
         addTodo({ text })
         flashFor(`已添加待办「${text}」`)
       },
+    })
+    // 放最前：Ctrl K → 输入 → 回车就直接搜，不必先回到新标签页的搜索框
+    const engine = getEngine(config.search.engine, config.search.engines)
+    list.unshift({
+      key: 'act-search',
+      kind: 'action',
+      title: `在 ${engine.name} 中搜索：${text}`,
+      sub: '回车打开结果；想换引擎可先按 Tab 或在设置里配置',
+      icon: 'search',
+      hint: '搜索',
+      run: () => openUrl(buildSearchUrl(engine, text), config.search.openInNewTab),
     })
   }
   return list
@@ -158,7 +194,8 @@ const contentEntries = computed<Entry[]>(() => {
         icon: 'link',
         hint: '打开',
         url: link.url,
-        run: () => openUrl(link.url, config.search.openInNewTab),
+        alias: typeof link.alias === 'string' ? link.alias : '',
+        run: () => openLink(link.url, link.title),
       })
     }
   }
@@ -174,7 +211,7 @@ const contentEntries = computed<Entry[]>(() => {
         icon: 'bookmark',
         hint: '打开',
         url: link.url,
-        run: () => openUrl(link.url, config.search.openInNewTab),
+        run: () => openLink(link.url, link.title),
       })
     }
   }
@@ -232,13 +269,42 @@ const contentEntries = computed<Entry[]>(() => {
 
 const results = computed<Entry[]>(() => {
   const q = query.value.trim().toLowerCase()
+  const usageScore = (url?: string): number => (url ? (usageMap.value[url]?.count ?? 0) : 0)
+
   if (!q) {
-    // 空查询：动作全给，内容只给前 6 条链接，保持「打开就能按回车」
-    return [...actions.value, ...contentEntries.value.filter((item) => item.kind === 'link').slice(0, 6)]
+    // 空查询：动作全给，链接按显式点击次数排序，保持「打开就能按回车」
+    const recent = contentEntries.value
+      .filter((item) => item.kind === 'link' || item.kind === 'bookmark')
+      .slice()
+      .sort((a, b) => usageScore(b.url) - usageScore(a.url))
+      .slice(0, 6)
+    return [...actions.value, ...recent]
   }
-  const matched = (item: Entry): boolean =>
-    `${item.title} ${item.sub}`.toLowerCase().includes(q)
-  return [...actions.value, ...contentEntries.value].filter(matched).slice(0, 40)
+
+  /** 精确前缀 > 标题包含 > 拼音别名 > 网址 > 副标题，再叠加少量「最近使用」权重 */
+  const score = (item: Entry): number => {
+    const title = item.title.toLowerCase()
+    const alias = (item.alias ?? '').toLowerCase()
+    const sub = item.sub.toLowerCase()
+    const url = (item.url ?? '').toLowerCase()
+    let base = 0
+    if (title === q) base = 100
+    else if (title.startsWith(q)) base = 80
+    else if (alias && alias.startsWith(q)) base = 70
+    else if (title.includes(q)) base = 60
+    else if (alias && alias.includes(q)) base = 50
+    else if (url.includes(q)) base = 30
+    else if (sub.includes(q)) base = 20
+    if (base === 0) return 0
+    return base + Math.min(15, usageScore(item.url) * 3)
+  }
+
+  return [...actions.value, ...contentEntries.value]
+    .map((item) => ({ item, value: score(item) }))
+    .filter((row) => row.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 40)
+    .map((row) => row.item)
 })
 
 const activeEntry = computed<Entry | undefined>(() => results.value[activeIndex.value])

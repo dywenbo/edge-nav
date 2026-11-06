@@ -12,6 +12,7 @@ import { initTheme } from '@/composables/useTheme'
 import { editMode, guideOpen, paletteOpen, settingsOpen } from '@/store/ui'
 import { storageGet, storageSet } from '@/utils/storage'
 import { markReady } from '@/utils/perf'
+import { flushUsage, loadUsage } from '@/store/usage'
 
 /** 设置抽屉与操作指引都不参与首屏绘制，按需拉取对应 chunk */
 const SettingsPanel = defineAsyncComponent(() => import('@/components/SettingsPanel.vue'))
@@ -34,6 +35,15 @@ async function completeOnboarding(): Promise<void> {
   await storageSet(ONBOARD_KEY, true)
 }
 
+/** 常用站点是防抖落盘的，原地跳转 / 关标签页前强制写一次，避免漏记最后一次点击 */
+function onPageHide(): void {
+  flushUsage()
+}
+
+function onVisibilityChange(): void {
+  if (document.visibilityState === 'hidden') flushUsage()
+}
+
 function onKeydown(event: KeyboardEvent): void {
   // 输入法选词时的按键（含 Esc）不应该触发页面级快捷键
   if (event.isComposing) return
@@ -51,6 +61,8 @@ function onKeydown(event: KeyboardEvent): void {
     void completeOnboarding()
   } else if (settingsOpen.value) settingsOpen.value = false
   else if (editMode.value) editMode.value = false
+  // 极简模式是最后一层：Esc 逐层关完浮层后才退出
+  else if (config.view.minimal) config.view.minimal = false
 }
 
 onMounted(async () => {
@@ -59,11 +71,14 @@ onMounted(async () => {
   ready.value = true
   markReady()
   window.addEventListener('keydown', onKeydown)
+  window.addEventListener('pagehide', onPageHide)
+  document.addEventListener('visibilitychange', onVisibilityChange)
 
-  // 书签与节假日都是「有就读、没有也不影响使用」的附加数据，串行不阻塞首屏
+  // 书签、常用站点与节假日都是「有就读、没有也不影响使用」的附加数据，串行不阻塞首屏
+  void loadUsage()
   void loadBookmarks()
   const year = new Date().getFullYear()
-  void ensureHolidayData([year - 1, year, year + 1])
+  void ensureHolidayData([year - 1, year, year + 1], false, config.network.allowOnlineData)
 
   // 首次安装弹一次操作指引；老用户升级不打扰，顺手把标记补上
   const seen = await storageGet<boolean>(ONBOARD_KEY)
@@ -75,7 +90,11 @@ onMounted(async () => {
   guideOpen.value = true
 })
 
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('pagehide', onPageHide)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+})
 </script>
 
 <template>

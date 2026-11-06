@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { WidgetItem, WidgetType } from '@/types'
 import { config } from '@/store/config'
 import { activeWidgetId, canvasWidth, editMode, isFlow } from '@/store/ui'
@@ -27,9 +27,19 @@ const componentMap: Record<WidgetType, unknown> = {
 
 const hostRef = ref<HTMLElement | null>(null)
 
+/**
+ * 极简模式只留「概览 + 网址导航」两张卡。
+ * 这里只做视图层过滤，绝不删卡片、也不改坐标 —— 退出后布局原样恢复。
+ */
+const visibleWidgets = computed(() =>
+  config.view.minimal
+    ? config.widgets.filter((w) => w.type === 'overview' || w.type === 'links')
+    : config.widgets,
+)
+
 /** 布局坐标系宽度：至少 CANVAS_W，卡片被拖到更右侧时自动扩展 */
 const layoutWidth = computed(() =>
-  Math.max(CANVAS_W, ...config.widgets.map((w) => w.x + w.w), 0),
+  Math.max(CANVAS_W, ...visibleWidgets.value.map((w) => w.x + w.w), 0),
 )
 
 /**
@@ -41,8 +51,12 @@ const MAX_SCALE = 1.05
 /** 卡片最宽拉伸到设计宽度的多少倍（防止带鱼屏上把卡片摊成一张饼） */
 const MAX_STRETCH = 1.5
 
+/**
+ * 常规模式保留 560 的最小舞台，避免卡片少时页面塌得太矮；
+ * 极简模式按可见卡片的底边收口，把待办/日历/笔记留下的空白一起消掉。
+ */
 const stageHeight = computed(() =>
-  Math.max(560, ...config.widgets.map((w) => w.y + w.h), 0) + GAP,
+  Math.max(config.view.minimal ? 0 : 560, ...visibleWidgets.value.map((w) => w.y + w.h), 0) + GAP,
 )
 
 /**
@@ -140,7 +154,8 @@ function resolveCollisions(activeId: string): void {
   if (!active) return
 
   const placed: WidgetItem[] = [active]
-  const others = config.widgets
+  // 极简模式下隐藏的卡片不参与碰撞，避免「看不见的卡把可见卡挤下去」
+  const others = visibleWidgets.value
     .filter((w) => w.id !== activeId)
     .slice()
     .sort((a, b) => a.y - b.y || a.x - b.x)
@@ -165,7 +180,8 @@ function resolveCollisions(activeId: string): void {
 }
 
 function startDrag(event: PointerEvent, widget: WidgetItem, mode: DragMode): void {
-  if (!editMode.value || isFlow.value || event.button !== 0) return
+  // 极简模式是「只看不改」的情境视图，禁止拖拽以免改到看不见的卡片坐标
+  if (!editMode.value || isFlow.value || config.view.minimal || event.button !== 0) return
   drag = {
     id: widget.id,
     mode,
@@ -275,11 +291,26 @@ function onPointerUp(): void {
 
 function clampAll(): void {
   const boundsW = designW.value
-  for (const widget of config.widgets) {
+  // 只夹可见卡片：极简模式下不该因为窗口缩放而改写隐藏卡片的坐标
+  for (const widget of visibleWidgets.value) {
     widget.y = Math.max(0, widget.y)
     widget.x = Math.max(0, Math.min(widget.x, boundsW - widget.w))
   }
 }
+
+watch(
+  () => config.view.minimal,
+  (on) => {
+    if (!on) return
+    // 进入极简模式时退出编辑态，避免继续显示拖拽/删除把手
+    editMode.value = false
+    activeWidgetId.value = null
+    clearGuides()
+    drag = null
+    document.body.classList.remove('is-dragging')
+    window.removeEventListener('pointermove', onPointerMove)
+  },
+)
 
 /* ---------------- 容器测量 ---------------- */
 
@@ -314,7 +345,7 @@ onBeforeUnmount(() => {
     <!-- 窄屏：流式堆叠，禁用绝对定位与拖拽 -->
     <div v-if="isFlow" class="board__flow">
       <WidgetFrame
-        v-for="widget in config.widgets"
+        v-for="widget in visibleWidgets"
         :key="widget.id"
         :widget="widget"
         flow
@@ -326,7 +357,7 @@ onBeforeUnmount(() => {
     <!-- 桌面：绝对定位画布，整体等比缩放以适配容器宽度 -->
     <div v-else class="board__stage" :style="stageStyle">
       <WidgetFrame
-        v-for="widget in config.widgets"
+        v-for="widget in visibleWidgets"
         :key="widget.id"
         :widget="widget"
         :style="frameStyle(widget)"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { guideOpen, settingsOpen } from '@/store/ui'
 import {
   config,
@@ -33,18 +33,22 @@ import {
 } from '@/utils/holidaySync'
 import { isDark } from '@/composables/useTheme'
 import { GRADIENTS, STYLE_WALLPAPER, isPairedWallpaper } from '@/data/wallpapers'
-import { ENGINES } from '@/data/engines'
+import { BUILTIN_ENGINES, activeEngines, isValidEngineUrl } from '@/data/engines'
+import { PERMISSIONS, REMOTE_HOSTS, STORAGE_KEYS } from '@/data/privacy'
+import { AUDIT_LABEL, auditConfig, dedupeLinks, fillAliases } from '@/utils/configAudit'
+import { clearUsage, usageCount } from '@/store/usage'
 import { fileToCompressedDataUrl } from '@/utils/image'
 import { downloadText } from '@/utils/download'
 import { readBookmarkLinks } from '@/utils/bookmarks'
 import { CANVAS_W, GAP } from '@/data/layout'
-import type { ThemeMode, UIStyle, WidgetType } from '@/types'
+import { uid } from '@/utils/id'
+import type { SearchEngineItem, ThemeMode, UIStyle, WidgetType } from '@/types'
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const importInput = ref<HTMLInputElement | null>(null)
 const uploadError = ref('')
 const cityDraft = ref(config.weather.city)
-const cityStatus = ref<'idle' | 'loading' | 'ok' | 'empty' | 'error'>('idle')
+const cityStatus = ref<'idle' | 'loading' | 'ok' | 'empty' | 'error' | 'offline'>('idle')
 const status = ref<{ type: 'ok' | 'error'; text: string } | null>(null)
 
 /** 待确认的导入：先摆出「文件里有什么 / 现在有什么」，再让用户选覆盖还是合并 */
@@ -62,7 +66,7 @@ const appVersion = computed(() => {
   } catch {
     /* 网页预览下没有 runtime，回落到固定文案 */
   }
-  return '0.6.0'
+  return '0.7.0'
 })
 
 watch(settingsOpen, (open) => {
@@ -146,6 +150,12 @@ function clearImage(): void {
 }
 
 async function searchCity(): Promise<void> {
+  // 城市搜索是 geocoding-api 的唯一入口。完全离线模式必须在这里拦住，
+  // 否则「关掉即不再请求那 5 个域名」的承诺不成立（回车仍可绕过按钮禁用）。
+  if (!config.network.allowOnlineData) {
+    cityStatus.value = 'offline'
+    return
+  }
   const name = cityDraft.value.trim()
   if (!name) return
   cityStatus.value = 'loading'
@@ -185,6 +195,96 @@ function tidyLayout(): void {
 function onCompact(): void {
   const changed = compactLayout()
   flash('ok', changed ? '已把卡片往上收，去掉多余留白' : '现在没有可去掉的留白了')
+}
+
+/* ---------------- 搜索引擎（v9 可自定义） ---------------- */
+
+const engineDraft = reactive({ name: '', url: '', shortcut: '' })
+const engineError = ref('')
+const usableEngines = computed(() => activeEngines(config.search.engines))
+
+function onPickEngine(id: string): void {
+  // 停用的引擎被选中时自动启用，避免「选了却没用」
+  const item = config.search.engines.find((e) => e.id === id)
+  if (item && !item.enabled) item.enabled = true
+  config.search.engine = id
+}
+
+function onAddEngine(): void {
+  const name = engineDraft.name.trim()
+  const url = engineDraft.url.trim()
+  const shortcut = engineDraft.shortcut.trim().toLowerCase().replace(/^!/, '')
+  if (!name || !isValidEngineUrl(url)) {
+    engineError.value = '请填写名称与合法 URL（https://…）'
+    return
+  }
+  if (!url.includes('%s')) {
+    engineError.value = 'URL 模板里要用 %s 表示搜索关键词'
+    return
+  }
+  if (!/^[a-z0-9_-]+$/.test(shortcut)) {
+    engineError.value = '前缀只支持字母、数字、- 与 _'
+    return
+  }
+  if (config.search.engines.some((e) => (e.shortcut || '').toLowerCase() === shortcut)) {
+    engineError.value = `前缀 !${shortcut} 已被其它引擎占用`
+    return
+  }
+  config.search.engines.push({ id: `e-${uid()}`, name, url, shortcut, enabled: true })
+  engineDraft.name = ''
+  engineDraft.url = ''
+  engineDraft.shortcut = ''
+  engineError.value = ''
+  flash('ok', `已添加「${name}」：在搜索框输入 !${shortcut} 关键词即可直搜`)
+}
+
+function onToggleEngine(item: SearchEngineItem): void {
+  if (item.enabled && usableEngines.value.length <= 1) {
+    flash('error', '至少要保留一个启用的搜索引擎')
+    return
+  }
+  item.enabled = !item.enabled
+  if (!item.enabled && config.search.engine === item.id) {
+    config.search.engine = usableEngines.value[0]?.id ?? 'bing'
+  }
+}
+
+function onRemoveEngine(item: SearchEngineItem): void {
+  if (item.builtin) return
+  const index = config.search.engines.findIndex((e) => e.id === item.id)
+  if (index >= 0) config.search.engines.splice(index, 1)
+  if (config.search.engine === item.id) {
+    config.search.engine = usableEngines.value[0]?.id ?? 'bing'
+  }
+}
+
+function onMoveEngine(index: number, step: number): void {
+  const list = config.search.engines
+  const target = index + step
+  if (target < 0 || target >= list.length) return
+  const [item] = list.splice(index, 1)
+  if (item) list.splice(target, 0, item)
+}
+
+function onResetEngines(): void {
+  config.search.engines = structuredClone(BUILTIN_ENGINES)
+  config.search.engine = 'bing'
+  flash('ok', '已恢复 5 个内置搜索引擎')
+}
+
+/* ---------------- 配置体检 ---------------- */
+
+const auditIssues = computed(() => auditConfig(config))
+
+function onFixAudit(): void {
+  const removed = dedupeLinks(config)
+  const filled = fillAliases(config)
+  flash('ok', `已去掉 ${removed} 条重复链接、补齐 ${filled} 条搜索别名`)
+}
+
+function onClearUsage(): void {
+  clearUsage()
+  flash('ok', '常用站点记录已清空')
 }
 
 /* ---------------- 数据 ---------------- */
@@ -308,6 +408,10 @@ function onRestoreHidden(): void {
 }
 
 async function onRefreshHolidays(): Promise<void> {
+  if (!config.network.allowOnlineData) {
+    flash('error', '当前是完全离线模式，请先在「隐私与权限」里允许联网')
+    return
+  }
   try {
     await refreshHolidays()
     if (holidayState.status === 'online') flash('ok', '节假日数据已更新')
@@ -363,6 +467,13 @@ async function onRefreshHolidays(): Promise<void> {
                 苹果：22px 大圆角 + 玻璃卡片 + 菜单栏 / Dock；Win11：8px 圆角 + 亚克力细描边 +
                 居中任务栏。只换材质与外壳，与深浅色互不影响。
               </p>
+              <label class="switch">
+                <input v-model="config.view.minimal" type="checkbox" />
+                <span>极简模式（只留时钟天气与网址导航）</span>
+              </label>
+              <p class="hint">
+                卡片不会被删除，只是暂时不显示；也可在命令面板里搜「极简」切换，或用 <b>Esc</b> 退出。
+              </p>
             </section>
 
             <section class="group">
@@ -410,14 +521,18 @@ async function onRefreshHolidays(): Promise<void> {
               <h3>搜索</h3>
               <div class="chips">
                 <button
-                  v-for="engine in ENGINES"
+                  v-for="engine in config.search.engines"
                   :key="engine.id"
                   type="button"
                   class="chip"
-                  :class="{ active: config.search.engine === engine.id }"
-                  @click="config.search.engine = engine.id"
+                  :class="{ active: config.search.engine === engine.id, muted: !engine.enabled }"
+                  @click="onPickEngine(engine.id)"
                 >{{ engine.name }}</button>
               </div>
+              <p class="hint">
+                搜索框里按 <b>Tab / Shift+Tab</b> 轮换引擎，或输入 <code>!gh vue</code> 直接指定引擎；
+                只写 <code>!gh</code> 则切换当前引擎而不发起空搜索。
+              </p>
               <label class="switch">
                 <input v-model="config.search.openInNewTab" type="checkbox" />
                 <span>网址在新标签页打开</span>
@@ -430,6 +545,51 @@ async function onRefreshHolidays(): Promise<void> {
                 <input v-model="config.showSeconds" type="checkbox" />
                 <span>时钟显示秒数</span>
               </label>
+
+              <p class="label">管理引擎</p>
+              <ul class="list engine-list">
+                <li v-for="(engine, index) in config.search.engines" :key="engine.id">
+                  <span class="engine__name">
+                    <b>{{ engine.name }}</b>
+                    <small>!{{ engine.shortcut || '—' }} · {{ engine.url }}</small>
+                  </span>
+                  <span class="engine__ops">
+                    <button type="button" class="link-action" title="上移" @click="onMoveEngine(index, -1)">↑</button>
+                    <button type="button" class="link-action" title="下移" @click="onMoveEngine(index, 1)">↓</button>
+                    <button type="button" class="link-action" @click="onToggleEngine(engine)">
+                      {{ engine.enabled ? '停用' : '启用' }}
+                    </button>
+                    <button
+                      v-if="!engine.builtin"
+                      type="button"
+                      class="link-danger"
+                      @click="onRemoveEngine(engine)"
+                    >删除</button>
+                  </span>
+                </li>
+              </ul>
+
+              <p class="label">新增引擎</p>
+              <div class="row">
+                <input v-model="engineDraft.name" class="input" placeholder="名称，如 MDN" />
+                <input v-model="engineDraft.shortcut" class="input" placeholder="前缀，如 mdn" />
+              </div>
+              <div class="row">
+                <input
+                  v-model="engineDraft.url"
+                  class="input"
+                  placeholder="https://example.com/search?q=%s"
+                />
+                <button type="button" class="btn" @click="onAddEngine">添加</button>
+              </div>
+              <p v-if="engineError" class="hint hint--error">{{ engineError }}</p>
+              <div class="row">
+                <button type="button" class="btn ghost" @click="onResetEngines">恢复内置引擎</button>
+              </div>
+              <p class="hint">
+                自定义引擎只存本机，会随导出文件一起带走；<b>合并导入不会覆盖当前引擎设置</b>。
+                模板里的 <code>%s</code> 会替换成编码后的关键词；跳转到外部站点不需要额外权限。
+              </p>
             </section>
 
             <section class="group">
@@ -442,13 +602,22 @@ async function onRefreshHolidays(): Promise<void> {
                   placeholder="输入城市名，如 北京"
                   @keydown.enter.prevent="searchCity"
                 />
-                <button type="button" class="btn" :disabled="cityStatus === 'loading'" @click="searchCity">
+                <button
+                  type="button"
+                  class="btn"
+                  :disabled="cityStatus === 'loading' || !config.network.allowOnlineData"
+                  @click="searchCity"
+                >
                   {{ cityStatus === 'loading' ? '查询中' : '查询' }}
                 </button>
               </div>
+              <p v-if="!config.network.allowOnlineData" class="hint">
+                完全离线模式下已停用联网查城市；需切换城市时，请先在下方「隐私与权限」里允许联网。
+              </p>
               <p v-if="cityStatus === 'ok'" class="hint">已切换为「{{ config.weather.city }}」</p>
               <p v-else-if="cityStatus === 'empty'" class="hint hint--error">没有找到该城市，换个写法试试</p>
               <p v-else-if="cityStatus === 'error'" class="hint hint--error">查询失败，请检查网络</p>
+              <p v-else-if="cityStatus === 'offline'" class="hint hint--error">完全离线模式，不能联网查询城市</p>
             </section>
 
             <section class="group">
@@ -601,6 +770,86 @@ async function onRefreshHolidays(): Promise<void> {
               <div class="row">
                 <button type="button" class="btn ghost" @click="onCreateSnapshot">立即创建快照</button>
               </div>
+            </section>
+
+            <section class="group">
+              <h3>隐私与权限</h3>
+              <label class="switch">
+                <input v-model="config.network.allowOnlineData" type="checkbox" />
+                <span>允许天气与节假日联网更新</span>
+              </label>
+              <p class="hint">
+                关掉即<b>完全离线</b>：不再请求下面 5 个域名，天气改用 20 分钟缓存，
+                节假日改用本地缓存与内置表。<b>天气请求会带城市经纬度</b>，节假日请求只带年份。
+                搜索与网址跳转属于浏览器正常导航，不受此开关影响。
+              </p>
+
+              <label class="switch">
+                <input v-model="config.usage.enabled" type="checkbox" />
+                <span>记录常用站点（仅本扩展内的点击）</span>
+              </label>
+              <p class="hint">
+                开启后网址导航会多一个「常去」标签，按点击次数排出前 8 个。
+                数据单独存在本机，<b>不读取浏览器历史、不随配置导出</b>；关掉开关即隐藏该标签并停止记录。
+              </p>
+              <div class="row">
+                <button type="button" class="btn ghost" @click="onClearUsage">
+                  清空使用记录（{{ usageCount }} 条）
+                </button>
+              </div>
+
+              <p class="label">申请的 4 项权限</p>
+              <ul class="list privacy-list">
+                <li v-for="item in PERMISSIONS" :key="item.name">
+                  <code>{{ item.name }}</code><span>{{ item.why }}</span>
+                </li>
+              </ul>
+
+              <p class="label">唯一会主动请求的 5 个域名</p>
+              <ul class="list privacy-list">
+                <li v-for="item in REMOTE_HOSTS" :key="item.name">
+                  <code>{{ item.name }}</code><span>{{ item.why }}</span>
+                </li>
+              </ul>
+
+              <p class="label">本机存储键</p>
+              <ul class="list privacy-list">
+                <li v-for="item in STORAGE_KEYS" :key="item.name">
+                  <code>{{ item.name }}</code><span>{{ item.why }}</span>
+                </li>
+              </ul>
+              <p class="hint">
+                没有账号、没有后台脚本、没有统计上报；书签导航是只读镜像，隐藏链接不会删书签。
+                权限与域名以 <code>public/manifest.json</code> 为准。
+              </p>
+            </section>
+
+            <section class="group">
+              <h3>配置体检</h3>
+              <p class="hint">
+                纯本地静态检查：重复网址、缺标题、非 http(s) 协议、中文标题缺少拼音搜索别名。
+                <b>不会向任意网址发请求</b>——扩展没有这个权限，也不存在「上传你的书签」。
+              </p>
+              <div class="row">
+                <button
+                  type="button"
+                  class="btn ghost"
+                  :disabled="!auditIssues.length"
+                  @click="onFixAudit"
+                >一键修复（去重 + 补别名）</button>
+              </div>
+              <ul v-if="auditIssues.length" class="list audit-list">
+                <li v-for="(issue, index) in auditIssues.slice(0, 20)" :key="index">
+                  <b class="audit__tag">{{ AUDIT_LABEL[issue.kind] }}</b>
+                  <span class="audit__text">
+                    <b>{{ issue.label }}</b><small>{{ issue.detail }}</small>
+                  </span>
+                </li>
+              </ul>
+              <p v-if="auditIssues.length > 20" class="hint">
+                还有 {{ auditIssues.length - 20 }} 条未列出，点「一键修复」可批量处理。
+              </p>
+              <p v-else-if="!auditIssues.length" class="hint">没有发现问题。</p>
             </section>
 
             <section class="group">
@@ -1070,5 +1319,99 @@ async function onRefreshHolidays(): Promise<void> {
 .drawer-enter-from .settings__panel,
 .drawer-leave-to .settings__panel {
   transform: translateX(100%);
+}
+
+/* ---------------- v9：引擎 / 隐私 / 体检 ---------------- */
+
+.chip.muted {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.engine-list li {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.engine__name {
+  flex: 1;
+  min-width: 150px;
+}
+
+.engine__name b {
+  display: block;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.engine__name small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 10.5px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.engine__ops {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+}
+
+.privacy-list li {
+  display: block;
+  padding: 8px 0;
+}
+
+.privacy-list code {
+  display: block;
+  color: var(--text);
+  font-size: 11.5px;
+}
+
+.privacy-list span {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.audit-list li {
+  align-items: flex-start;
+}
+
+.audit__tag {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--control-bg);
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.audit__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.audit__text b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.audit__text small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 10.5px;
+  line-height: 1.5;
 }
 </style>

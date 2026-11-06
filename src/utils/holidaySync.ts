@@ -127,11 +127,23 @@ async function fetchYear(year: number): Promise<Record<string, HolidayEntry> | n
  * 确保指定年份的数据可用。
  * @param years 需要覆盖的年份（一般传 去年/今年/明年）
  * @param force 忽略 TTL 强制刷新
+ * @param allowNetwork 完全离线开关；关掉时只读本地缓存与内置表，不发起任何请求
  */
-export function ensureHolidayData(years: number[], force = false): Promise<void> {
+export function ensureHolidayData(
+  years: number[],
+  force = false,
+  allowNetwork = true,
+): Promise<void> {
   if (inflight) return inflight
   inflight = (async () => {
     await loadCache()
+
+    if (!allowNetwork) {
+      holidayState.status = Object.keys(holidayState.days).length ? 'cache' : 'builtin'
+      holidayState.error = '完全离线模式，使用本地缓存与内置节假日表'
+      inflight = null
+      return
+    }
 
     const missing = years.filter(
       (y) => force || !cache.years[y] || Date.now() - cache.years[y].fetchedAt > TTL,

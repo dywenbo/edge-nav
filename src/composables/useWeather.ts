@@ -61,6 +61,15 @@ export function useWeather() {
     error.value = ''
 
     try {
+      // 完全离线模式：连缓存过期也不发请求，只用上次的数据
+      if (!config.network.allowOnlineData) {
+        const cached = await storageGet<{ data: WeatherPayload }>(CACHE_KEY)
+        payload.value = cached?.data ?? null
+        error.value = cached?.data ? '完全离线，显示上次数据' : '完全离线，暂无天气数据'
+        loading.value = false
+        return
+      }
+
       if (!force) {
         const cached = await storageGet<{
           ts: number
@@ -113,7 +122,7 @@ export function useWeather() {
   }
 
   watch(
-    () => [config.weather.lat, config.weather.lon],
+    () => [config.weather.lat, config.weather.lon, config.network.allowOnlineData],
     () => void load(true),
   )
 

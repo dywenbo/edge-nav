@@ -31,6 +31,7 @@ import {
   pushToBookmarks,
 } from '@/store/bookmarks'
 import { editMode } from '@/store/ui'
+import { flushUsage, recordUsage, topUsage } from '@/store/usage'
 import { faviconUrl, normalizeUrl, domainOf } from '@/utils/favicon'
 import { readBookmarkLinks } from '@/utils/bookmarks'
 import CardHead from './CardHead.vue'
@@ -38,12 +39,12 @@ import Icon from './Icon.vue'
 
 const props = defineProps<{ widget: WidgetItem }>()
 
-/** 一行链接：本地分组 / 书签镜像 / 只在导航里存在的补充项 */
+/** 一行链接：本地分组 / 书签镜像 / 只在导航里存在的补充项 / 自动生成的常用站点 */
 interface Row {
   id: string
   title: string
   url: string
-  kind: 'local' | 'bookmark' | 'extra'
+  kind: 'local' | 'bookmark' | 'extra' | 'usage'
 }
 
 interface TabItem {
@@ -54,7 +55,12 @@ interface TabItem {
   path?: string
   /** 第一个书签文件夹前加一道分隔线，区分「本地分组」与「浏览器书签」 */
   sep?: boolean
+  /** 虚拟标签（常用站点）：不可改名、不可删除、不可添加链接 */
+  virtual?: boolean
 }
+
+/** 常用站点是虚拟标签，不写进 config.groups，也不占分组 id */
+const USAGE_TAB = 'usage:top'
 
 /* ---------------- 标签页 ---------------- */
 
@@ -75,7 +81,18 @@ const tabs = computed<TabItem[]>(() => {
       path: f.path,
       sep: index === 0 && local.length > 0,
     }))
-  return [...local, ...folders]
+  if (!config.usage.enabled) return [...local, ...folders]
+  // 常去站点：只统计本扩展里的显式点击，最多 8 条；读浏览器历史需要 history 权限，这里不申请
+  const usage: TabItem[] = [{
+    key: USAGE_TAB,
+    name: '常去',
+    count: topUsage(8).length,
+    bookmark: false,
+    path: '按你在本扩展里的点击自动生成，最多 8 条',
+    sep: folders.length === 0 && local.length > 0,
+    virtual: true,
+  }]
+  return [...local, ...folders, ...usage]
 })
 
 /**
@@ -85,6 +102,8 @@ const tabs = computed<TabItem[]>(() => {
  */
 const activeKey = computed(() => {
   const key = props.widget.groupId
+  // 统计被关掉时虚拟标签会消失，这里同步回落，避免停在一个不存在的标签上
+  if (key === USAGE_TAB && config.usage.enabled) return USAGE_TAB
   if (isBookmarkTab(key)) {
     const folderId = folderIdOfTab(key as string)
     const folder = config.bookmarks.folders.find((f) => f.id === folderId)
@@ -108,7 +127,17 @@ const activeGroup = computed(() =>
   isBookmarkTab(activeKey.value) ? undefined : config.groups.find((g) => g.id === activeKey.value),
 )
 
+const isUsageTab = computed(() => activeKey.value === USAGE_TAB && config.usage.enabled)
+
 const rows = computed<Row[]>(() => {
+  if (isUsageTab.value) {
+    return topUsage(8).map((item) => ({
+      id: `usage-${item.url}`,
+      title: item.title,
+      url: item.url,
+      kind: 'usage' as const,
+    }))
+  }
   if (activeFolderId.value) return navLinksOfFolder(activeFolderId.value)
   return (activeGroup.value?.links ?? []).map((l) => ({ ...l, kind: 'local' as const }))
 })
@@ -133,18 +162,96 @@ function updateScrollState(): void {
   atEnd.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 2
 }
 
+/* ---------------- 浏览态「两行完整可见」分页 ----------------
+ * links 卡默认 h=220，扣掉 --card-pad(32px) 与 CardHead(24+10px) 后网格约 150px。
+ * 旧磁贴 42px 图标 + 6px 间距 + 16px 标题 + 15px padding = 79px，
+ * 两行 79×2+8=166px > 150px，必然竖滚并裁掉第二行。
+ * 现在按容器实际容量切片：列数读计算后的 grid-template-columns，
+ * 行数按 clientHeight / 磁贴实测高度算出、上限 2 行；超出的链接翻页，
+ * 浏览态因此没有内部滚动条，也不会露出半个磁贴。
+ * 编辑态保留全量滚动，跨页拖拽排序不受影响。
+ */
+const ROW_LIMIT = 2
+const ROW_GAP = 8
+const cols = ref(0)
+const rowsFit = ref(ROW_LIMIT)
+const fits = ref(true)
+const page = ref(0)
+let observer: ResizeObserver | null = null
+
+/** 「添加」磁贴在浏览态也会占一格，分页时要给它留位 */
+const showAdd = computed(
+  () => !isUsageTab.value && (editMode.value || rows.value.length === 0 || !!activeFolderId.value),
+)
+/** 卡片被拖到连一个磁贴都放不下时退回滚动，宁可出现滚动条也不裁内容 */
+const paged = computed(() => !editMode.value && cols.value > 0 && fits.value)
+const capacity = computed(() => Math.max(1, cols.value * rowsFit.value))
+const pageSize = computed(() =>
+  Math.max(1, capacity.value - (paged.value && showAdd.value ? 1 : 0)),
+)
+const pageCount = computed(() => Math.max(1, Math.ceil(rows.value.length / pageSize.value)))
+const offset = computed(() => (paged.value ? page.value * pageSize.value : 0))
+const pagedRows = computed<Row[]>(() =>
+  paged.value ? rows.value.slice(offset.value, offset.value + pageSize.value) : rows.value,
+)
+
+function measureGrid(): void {
+  const el = gridRef.value
+  if (!el) return
+  // auto-fill 计算后是「135.33px 135.33px ...」，直接数轨道最准；拿不到时按最小列宽兜底
+  const tracks = getComputedStyle(el).gridTemplateColumns.split(/\s+/).filter((v) => v.endsWith('px'))
+  const nextCols = tracks.length || Math.max(1, Math.floor((el.clientWidth + 6) / 134))
+  if (cols.value !== nextCols) cols.value = nextCols
+  const tile = el.querySelector<HTMLElement>('.link')
+  const tileH = tile?.offsetHeight || 63
+  const nextFits = el.clientHeight >= tileH + 2
+  if (fits.value !== nextFits) fits.value = nextFits
+  const nextRows = Math.max(
+    1,
+    Math.min(ROW_LIMIT, Math.floor((el.clientHeight + ROW_GAP) / (tileH + ROW_GAP))),
+  )
+  if (rowsFit.value !== nextRows) rowsFit.value = nextRows
+}
+
+function goPage(delta: number): void {
+  page.value = Math.max(0, Math.min(page.value + delta, pageCount.value - 1))
+}
+
 function onWindowResize(): void {
+  measureGrid()
   updateScrollState()
 }
 
 onMounted(() => {
+  measureGrid()
   updateScrollState()
   window.addEventListener('resize', onWindowResize)
+  if (gridRef.value && typeof ResizeObserver !== 'undefined') {
+    observer = new ResizeObserver(() => {
+      measureGrid()
+      updateScrollState()
+    })
+    observer.observe(gridRef.value)
+  }
 })
 
-onBeforeUnmount(() => window.removeEventListener('resize', onWindowResize))
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onWindowResize)
+  observer?.disconnect()
+})
 
-watch(rows, () => void nextTick(updateScrollState))
+watch(activeKey, () => {
+  page.value = 0
+})
+watch([pageCount, editMode, cols, rowsFit], () => {
+  if (page.value > pageCount.value - 1) page.value = pageCount.value - 1
+})
+watch(rows, () =>
+  void nextTick(() => {
+    measureGrid()
+    updateScrollState()
+  }),
+)
 
 function flash(text: string): void {
   flashMsg.value = text
@@ -243,8 +350,17 @@ function hueOf(text: string): number {
   return hash
 }
 
-function onOpen(event: MouseEvent): void {
-  if (editMode.value) event.preventDefault()
+function onOpen(event: MouseEvent, row: Row): void {
+  if (editMode.value) {
+    event.preventDefault()
+    return
+  }
+  // 只记「从导航里点开」的网址，搜索关键词和浏览器自身的历史都不碰
+  if (config.usage.enabled) {
+    recordUsage(row.url, row.title)
+    // 原地跳转会立刻卸载页面，等不及 200ms 防抖
+    if (!config.search.openInNewTab) flushUsage()
+  }
 }
 
 function openCreate(): void {
@@ -361,7 +477,7 @@ function onDragEnd(): void {
           :class="{ 'tab--active': tab.key === activeKey, 'tab--bm': tab.bookmark }"
           :title="`${tab.path ?? tab.name} · ${tab.count} 条${tab.bookmark ? '（浏览器书签文件夹）' : ''}`"
           @click="setActiveGroup(props.widget.id, tab.key)"
-          @dblclick="editMode && !tab.bookmark && startRename(tab.key, tab.name)"
+          @dblclick="editMode && !tab.bookmark && !tab.virtual && startRename(tab.key, tab.name)"
         >
           <span v-if="tab.sep" class="tab__sep" />
           <input
@@ -380,7 +496,7 @@ function onDragEnd(): void {
             <span class="tab__name">{{ tab.name }}</span>
           </template>
           <span
-            v-if="editMode && renamingId !== tab.key && (tab.bookmark || config.groups.length > 1)"
+            v-if="editMode && !tab.virtual && renamingId !== tab.key && (tab.bookmark || config.groups.length > 1)"
             class="tab__del"
             :title="tab.bookmark ? `从导航移除「${tab.name}」（不会删除浏览器书签）` : '删除该分组'"
             @click.stop="
@@ -417,7 +533,7 @@ function onDragEnd(): void {
       </button>
 
       <button
-        v-else
+        v-else-if="!isUsageTab"
         type="button"
         class="links__import"
         title="把浏览器书签拍平导入到当前分组"
@@ -426,23 +542,37 @@ function onDragEnd(): void {
         <Icon name="download" :size="12" />
         书签导入
       </button>
+
+      <!-- 翻页控件放在卡片头部：不占网格高度，否则两行容量会被页脚吃掉 -->
+      <div
+        v-if="paged && pageCount > 1"
+        class="links__pager"
+        :title="`共 ${rows.length} 条，每页最多 ${capacity} 个磁贴`"
+      >
+        <button type="button" :disabled="page === 0" title="上一页" @click="goPage(-1)">‹</button>
+        <span>{{ page + 1 }} / {{ pageCount }}</span>
+        <button type="button" :disabled="page >= pageCount - 1" title="下一页" @click="goPage(1)">›</button>
+      </div>
     </CardHead>
 
     <div
       ref="gridRef"
       class="links__grid"
-      :class="{ 'links__grid--more': canScroll && !atEnd }"
+      :class="{
+        'links__grid--paged': paged,
+        'links__grid--more': !paged && canScroll && !atEnd,
+      }"
       @scroll.passive="updateScrollState"
     >
       <div
-        v-for="(row, index) in rows"
+        v-for="(row, index) in pagedRows"
         :key="row.id"
         class="link"
         :class="{ 'link--over': overIndex === index }"
         :draggable="editMode && row.kind === 'local'"
-        @dragstart="draggingIndex = index"
+        @dragstart="draggingIndex = offset + index"
         @dragover.prevent.stop="draggingIndex >= 0 && (overIndex = index)"
-        @drop.stop.prevent="onDropLink(index)"
+        @drop.stop.prevent="onDropLink(offset + index)"
         @dragend="onDragEnd"
       >
         <a
@@ -451,7 +581,7 @@ function onDragEnd(): void {
           :target="config.search.openInNewTab ? '_blank' : '_self'"
           rel="noopener noreferrer"
           :title="`${row.title}\n${row.url}`"
-          @click="onOpen"
+          @click="onOpen($event, row)"
         >
           <span class="link__icon" :class="{ 'link__icon--local': row.kind === 'extra' }">
             <img
@@ -470,7 +600,7 @@ function onDragEnd(): void {
           <span class="link__title">{{ row.title }}</span>
         </a>
 
-        <div v-if="editMode" class="link__ops">
+        <div v-if="editMode && row.kind !== 'usage'" class="link__ops">
           <button
             v-if="row.kind !== 'bookmark'"
             type="button"
@@ -493,7 +623,7 @@ function onDragEnd(): void {
 
       <!-- 书签文件夹里「添加」始终可见：这是往该文件夹加地址的入口 -->
       <button
-        v-if="editMode || rows.length === 0 || isBookmarkTabActive"
+        v-if="showAdd"
         type="button"
         class="link link--add"
         :class="{ 'link--add-dim': !editMode && rows.length > 0 }"
@@ -503,7 +633,10 @@ function onDragEnd(): void {
         <span class="link__title">添加</span>
       </button>
 
-      <p v-if="!rows.length && !editMode && isBookmarkTabActive" class="links__empty">
+      <p v-if="isUsageTab && !rows.length" class="links__empty">
+        还没有常去站点。从任意分组点开几个网址，这里会自动按点击次数排出前 8 个（不读取浏览器历史）。
+      </p>
+      <p v-else-if="!rows.length && !editMode && isBookmarkTabActive" class="links__empty">
         {{ bookmarkState.supported ? '这个书签文件夹里还没有网址，点上面的「添加」加一条。' : '当前环境读不到书签，请在扩展中打开本页面。' }}
       </p>
     </div>
@@ -708,6 +841,51 @@ function onDragEnd(): void {
   color: var(--accent);
 }
 
+/* 翻页胶囊：和「书签导入」同一套材质，放在 CardHead 里不占网格高度 */
+.links__pager {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+  height: 24px;
+  padding: 0 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--control-bg);
+  color: var(--text-2);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.links__pager span {
+  min-width: 30px;
+  text-align: center;
+}
+
+.links__pager button {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.links__pager button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+.links__pager button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .is-spin {
   animation: spin 0.9s linear infinite;
 }
@@ -728,18 +906,26 @@ function onDragEnd(): void {
 
 .links__grid {
   display: grid;
-  /* 最小 104px、多余宽度平分：少数几条时不至于甩在最左边 */
-  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  /* 128px 列宽：中文站名基本不再被省略号截断；默认卡片刚好 8 列 × 2 行 = 16 格 */
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
   justify-content: center;
   gap: 8px 6px;
   /* 内容不足一屏时垂直居中（视觉上不至于全挤在顶部），溢出时退化为顶部对齐 */
   align-content: safe center;
+  /* 撑满卡片剩余高度：容量计算才有稳定的 clientHeight，内容少时居中才真正生效 */
+  flex: 1 1 auto;
   padding: 2px;
   overflow-y: auto;
   overscroll-behavior: contain;
   /* 按行吸附，滚动后不会停在半个磁贴上 */
   scroll-snap-type: y proximity;
   min-height: 0;
+}
+
+/* 浏览态按实测容量分页：容量已保证放得下，这里关掉滚动，永远不裁半行 */
+.links__grid--paged {
+  overflow: hidden;
+  scroll-snap-type: none;
 }
 
 /* 还有内容没露出来时，底部渐隐 —— 比露出半个磁贴干净，也提示可以滚 */
@@ -771,8 +957,9 @@ function onDragEnd(): void {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 8px 4px 7px;
+  /* 磁贴压到 63px：34 图标 + 4 间距 + 16 标题 + 9 padding，两行 + 8 行距 = 134px */
+  gap: 4px;
+  padding: 5px 4px 4px;
   text-decoration: none;
   color: var(--text);
 }
@@ -780,8 +967,9 @@ function onDragEnd(): void {
 .link__icon {
   display: grid;
   place-items: center;
-  width: var(--tile-icon-size);
-  height: var(--tile-icon-size);
+  /* 两套主题的 --tile-icon-size 分别是 42 / 36，统一收敛到 34px 保证两行放得下 */
+  width: min(var(--tile-icon-size), 34px);
+  height: min(var(--tile-icon-size), 34px);
   border-radius: var(--radius-icon);
   overflow: hidden;
   background: var(--icon-tile);
@@ -858,7 +1046,7 @@ function onDragEnd(): void {
 
 @media (max-width: 720px) {
   .links__grid {
-    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
   }
 }
 
@@ -867,8 +1055,8 @@ function onDragEnd(): void {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 4px 7px;
+  gap: 4px;
+  padding: 5px 4px 4px;
   border: 1px dashed var(--line-strong);
   background: transparent;
   color: var(--text-3);
